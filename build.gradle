@@ -46,38 +46,6 @@ loom {
 	}
 }
 
-String mainExtraDir
-String clientExtraDir
-
-if (project.minecraft_version.equals("1.21.4")) {
-	mainExtraDir = 'src/main/java-1_21_4'
-	clientExtraDir = 'src/client/java-1_21_4'
-} else if (project.minecraft_version.equals("1.21.10")) {
-	mainExtraDir = 'src/main/java-1_21_10'
-	clientExtraDir = 'src/client/java-1_21_10'
-} else {
-	mainExtraDir = 'src/main/java-data'
-	clientExtraDir = 'src/client/java-modern'
-}
-
-sourceSets {
-	main {
-		java {
-			srcDirs = [
-				'src/main/java',
-				mainExtraDir
-			]
-		}
-	}
-	client {
-		java {
-			srcDirs = [
-				'src/client/java',
-				clientExtraDir
-			]
-		}
-	}
-}
 
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
