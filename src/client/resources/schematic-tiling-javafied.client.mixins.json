@@ -1,0 +1,16 @@
+{
+	"required": true,
+	"package": "schematic.tiling.client.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"MixinGuiSchematicLoad",
+		"GuiBaseAccessor",
+		"ButtonBaseAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

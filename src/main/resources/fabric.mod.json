@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "schematic-tiling-javafied",
+	"version": "${version}",
+	"name": "Schematic Tiling",
+	"description": "Litematica addon to tile and generate schematics in-game from modular parts.",
+	"authors": [
+		"Selestor"
+	],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/schematic-tiling-javafied/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"schematic.tiling.SchematicTilingJavafied"
+		],
+		"client": [
+			"schematic.tiling.client.SchematicTilingJavafiedClient"
+		]
+	},
+	"mixins": [
+		"schematic-tiling-javafied.mixins.json",
+		{
+			"config": "schematic-tiling-javafied.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=21",
+		"fabric-api": "*",
+		"malilib": "*",
+		"litematica": "*"
+	}
+}

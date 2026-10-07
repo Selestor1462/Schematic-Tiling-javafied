@@ -1,0 +1,144 @@
+buildscript {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+	}
+	dependencies {
+		classpath "net.fabricmc:fabric-loom:${loom_version}"
+	}
+}
+
+plugins {
+	id 'maven-publish'
+}
+
+apply plugin: project.minecraft_version.startsWith("26.") ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"schematic-tiling-javafied" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+String mainExtraDir
+String clientExtraDir
+
+if (project.minecraft_version.equals("1.21.4")) {
+	mainExtraDir = 'src/main/java-1_21_4'
+	clientExtraDir = 'src/client/java-1_21_4'
+} else if (project.minecraft_version.equals("1.21.10")) {
+	mainExtraDir = 'src/main/java-1_21_10'
+	clientExtraDir = 'src/client/java-1_21_10'
+} else {
+	mainExtraDir = 'src/main/java-data'
+	clientExtraDir = 'src/client/java-modern'
+}
+
+sourceSets {
+	main {
+		java {
+			srcDirs = [
+				'src/main/java',
+				mainExtraDir
+			]
+		}
+	}
+	client {
+		java {
+			srcDirs = [
+				'src/client/java',
+				clientExtraDir
+			]
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	if (!project.minecraft_version.startsWith("26.")) {
+		mappings loom.officialMojangMappings()
+	}
+
+	def modDep = project.minecraft_version.startsWith("26.") ? "implementation" : "modImplementation"
+	add(modDep, "net.fabricmc:fabric-loader:${project.loader_version}")
+	add(modDep, "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}")
+	add(modDep, "maven.modrinth:malilib:${project.malilib_version}")
+	add(modDep, "maven.modrinth:litematica:${project.litematica_version}")
+}
+
+processResources {
+	def version = project.version
+	def mcVersion = project.minecraft_version
+	inputs.property "version", version
+	inputs.property "minecraft_version", mcVersion
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version, "minecraft_version": mcVersion
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

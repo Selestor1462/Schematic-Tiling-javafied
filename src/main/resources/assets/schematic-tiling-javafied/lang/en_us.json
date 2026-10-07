@@ -1,0 +1,18 @@
+{
+  "schematic_tiling.gui.button.tile_schematic": "Tile",
+  "schematic_tiling.gui.button.hover.tile_schematic": "Open the Schematic Tiler to generate a tiled build from this parts schematic",
+  "schematic_tiling.gui.title.tiler": "Tile Schematic: %s",
+  "schematic_tiling.gui.title.tiler_error": "Tile Schematic: Error",
+  "schematic_tiling.gui.label.instructions": "Input the size of the build (in blocks)",
+  "schematic_tiling.gui.label.width": "Width:",
+  "schematic_tiling.gui.label.length": "Length:",
+  "schematic_tiling.gui.label.author": "Author:",
+  "schematic_tiling.gui.checkbox.load_to_memory": "Load schematic to memory",
+  "schematic_tiling.gui.checkbox.create_placement": "Create placement in world",
+  "schematic_tiling.gui.button.apply": "Generate",
+  "schematic_tiling.gui.button.cancel": "Cancel",
+  "schematic_tiling.gui.error.positive_numbers": "Please enter valid positive numbers",
+  "schematic_tiling.gui.error.try_width": "Try width=%d instead of %d.",
+  "schematic_tiling.gui.message.generated": "Successfully generated '%s'!"
+}
+
