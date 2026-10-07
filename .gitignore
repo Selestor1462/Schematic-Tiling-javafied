@@ -4,9 +4,6 @@ build/
 out/
 classes/
 .gradletasknamecache
-gradlew
-gradlew.bat
-gradle/wrapper/
 
 # eclipse
 *.launch
