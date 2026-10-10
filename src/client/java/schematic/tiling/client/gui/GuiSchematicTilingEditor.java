@@ -196,6 +196,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private final AreaSelection selection;
     private final Map<String, GroupModel> groups = new LinkedHashMap<>();
     private final List<String> unassignedBoxes = new ArrayList<>();
+    private Set<String> lastKnownSubRegionNames = new LinkedHashSet<>();
 
     private String selectedGroupName = "Main";
     private String selectedSubgroupName = null;
@@ -275,6 +276,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.tuneWidthText = sLastTuneWidth;
         this.tuneLengthText = sLastTuneLength;
 
+        this.lastKnownSubRegionNames = new LinkedHashSet<>(this.selection.getAllSubRegionNames());
         this.parseSelectionBoxes();
 
         // Default to last edited box if still valid, otherwise active selection box from Minecraft, otherwise first unassigned
@@ -301,6 +303,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.unassignedBoxes.clear();
 
         Collection<String> allBoxes = this.selection.getAllSubRegionNames();
+        this.lastKnownSubRegionNames = new LinkedHashSet<>(allBoxes);
         for (String boxName : allBoxes) {
             if (boxName.contains(TilingUnit.SEP)) {
                 String[] parts = boxName.split(TilingUnit.SEP);
@@ -359,16 +362,15 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     if (sSubgroupDependsOnZ.containsKey(sgKey)) {
                         sgm.setDependsOnZ(sSubgroupDependsOnZ.get(sgKey));
                     }
-                } else {
-                    boolean allZ = true;
-                    for (TileModel tm : sgm.getTiles()) {
-                        if (!tm.dependsOnZ()) {
-                            allZ = false;
-                            break;
-                        }
-                    }
+                } else if (!this.hasMixedZDependence(sgm.getTiles())) {
+                    boolean allZ = sgm.getTiles().get(0).dependsOnZ();
                     sgm.setDependsOnZ(allZ);
                     sSubgroupDependsOnZ.put(sgKey, allZ);
+                } else if (sSubgroupDependsOnZ.containsKey(sgKey)) {
+                    sgm.setDependsOnZ(sSubgroupDependsOnZ.get(sgKey));
+                } else {
+                    sgm.setDependsOnZ(false);
+                    sSubgroupDependsOnZ.put(sgKey, false);
                 }
                 sgm.sortTiles();
             }
@@ -389,6 +391,73 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 ? subgroup.trim() : "Sweepers";
         String unitId = sg + "::" + tileName.trim();
         return group.trim() + " // " + unitId + " // " + xDep.getCode() + " // " + (zDep ? "1" : "0") + " // 0";
+    }
+
+    private String getBoxSubgroupName(String boxName) {
+        if (boxName == null || !boxName.contains(TilingUnit.SEP)) {
+            return "Sweepers";
+        }
+        String[] parts = boxName.split(TilingUnit.SEP);
+        if (parts.length < 2) {
+            return "Sweepers";
+        }
+        String subUnit = parts[1].trim();
+        if (subUnit.contains("::")) {
+            return subUnit.split("::", 2)[0].trim();
+        }
+        return "Sweepers";
+    }
+
+    private boolean resolveSubgroupDependsOnZ(String groupName, String sgName) {
+        if (groupName == null || sgName == null) {
+            return false;
+        }
+        GroupModel gm = this.groups.get(groupName);
+        SubgroupModel sgm = (gm != null) ? gm.getSubgroups().get(sgName) : null;
+        if (sgm != null) {
+            return sgm.dependsOnZ();
+        }
+        return sSubgroupDependsOnZ.getOrDefault(groupName + " // " + sgName, false);
+    }
+
+    private void syncDependsOnZFromForm() {
+        this.currentDependsOnZ = this.resolveSubgroupDependsOnZ(this.formGroup, this.formSubgroup);
+    }
+
+    private String rebuildTiledBoxName(String[] parts, String newZ) {
+        String group = parts.length > 0 ? parts[0].trim() : "Main";
+        String subUnit = parts.length > 1 ? parts[1].trim() : "Tile";
+        String xDep = parts.length > 2 ? parts[2].trim() : "t";
+        String outline = parts.length > 4 ? parts[4].trim() : "0";
+        return group + " // " + subUnit + " // " + xDep + " // " + newZ + " // " + outline;
+    }
+
+    private int[] getFineTuneRowXs(int rx) {
+        int labelW = this.getStringWidth(StringUtils.translate("schematic_tiling.gui.editor.label.schematic_is"));
+        int btnX = rx + labelW + 6;
+        int fieldX = btnX + 24 + 4;
+        int blocksX = fieldX + 30 + 6;
+        return new int[] { btnX, fieldX, blocksX };
+    }
+
+    private int drawWrappedError(GuiContext ctx, String err, int x, int y, int maxW, int screenBottom) {
+        if (err == null || err.isEmpty() || y > screenBottom) {
+            return y;
+        }
+        int markerW = this.getStringWidth("[!] ");
+        List<String> wrapped = this.wrapText(err, Math.max(8, maxW - markerW));
+        for (int i = 0; i < wrapped.size(); i++) {
+            if (y > screenBottom) {
+                break;
+            }
+            if (i == 0) {
+                this.drawString(ctx, "§c[!] " + wrapped.get(i), x, y, 0xFFFF4444);
+            } else {
+                this.drawString(ctx, "§c" + wrapped.get(i), x + markerW, y, 0xFFFF4444);
+            }
+            y += 12;
+        }
+        return y;
     }
 
     public List<String> wrapText(String text, int maxW) {
@@ -519,8 +588,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             } else {
                 this.formSubgroup = sLastFormSubgroup;
             }
-            SubgroupModel sgm = (gm != null) ? gm.getSubgroups().get(this.formSubgroup) : null;
-            this.currentDependsOnZ = (sgm != null) ? sgm.dependsOnZ() : sSubgroupDependsOnZ.getOrDefault(this.selectedGroupName + " // " + this.formSubgroup, false);
+            this.syncDependsOnZFromForm();
 
             if (isSameBox && sLastTileName != null && !sLastTileName.trim().isEmpty()) {
                 this.formTileName = sLastTileName;
@@ -757,6 +825,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                             this.openBoxForConfig(this.unassignedBoxes.get(0));
                             this.formGroup = this.selectedGroupName;
                             this.formSubgroup = sgName;
+                            this.syncDependsOnZFromForm();
                             this.selectedSubgroupName = null;
                             this.saveSessionState();
                             this.initGui();
@@ -771,6 +840,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                             this.openBoxForConfig(actualName);
                             this.formGroup = this.selectedGroupName;
                             this.formSubgroup = sgName;
+                            this.syncDependsOnZFromForm();
                             this.selectedSubgroupName = null;
                             this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.created_box", actualName));
                             this.saveSessionState();
@@ -1129,7 +1199,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         });
 
         // Subgroup Depends on Z (Length) checkbox at y = 104
-        boolean sgZ = sg.dependsOnZ() || sSubgroupDependsOnZ.getOrDefault(this.selectedGroupName + " // " + this.selectedSubgroupName, false);
+        boolean sgZ = sg.dependsOnZ();
         WidgetCheckBox checkboxSubgroupZ = new WidgetCheckBox(
                 rx, 104,
                 Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED,
@@ -1152,6 +1222,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.openBoxForConfig(this.unassignedBoxes.get(0));
                 this.formGroup = targetGroup;
                 this.formSubgroup = targetSg;
+                this.syncDependsOnZFromForm();
                 this.selectedSubgroupName = null;
                 this.saveSessionState();
                 this.initGui();
@@ -1166,6 +1237,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.openBoxForConfig(actualName);
                 this.formGroup = targetGroup;
                 this.formSubgroup = targetSg;
+                this.syncDependsOnZFromForm();
                 this.selectedSubgroupName = null;
                 this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.created_box", actualName));
                 this.saveSessionState();
@@ -1252,6 +1324,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 int idx = groupNames.indexOf(this.formGroup);
                 int next = (idx + 1) % groupNames.size();
                 this.formGroup = groupNames.get(next);
+                this.syncDependsOnZFromForm();
                 this.buttonGroupSelect.setDisplayString(StringUtils.translate("schematic_tiling.gui.editor.button.group_label", this.formGroup));
                 this.saveSessionState();
                 this.initGui();
@@ -1350,7 +1423,10 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.initGui();
             });
         } else {
-            if (this.formSubgroup == null || !sgNames.contains(this.formSubgroup)) this.formSubgroup = sgNames.get(0);
+            if (this.formSubgroup == null || !sgNames.contains(this.formSubgroup)) {
+                this.formSubgroup = sgNames.get(0);
+                this.syncDependsOnZFromForm();
+            }
             int cycleBtnW = rw - 94;
 
             ButtonGeneric renSGBtn = new ButtonGeneric(rx + rw - 90, rySubgroup, 46, 18, StringUtils.translate("schematic_tiling.gui.editor.button.rename_compact"));
@@ -1381,8 +1457,10 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 int idx = sgNames.indexOf(this.formSubgroup);
                 int next = (idx + 1) % sgNames.size();
                 this.formSubgroup = sgNames.get(next);
+                this.syncDependsOnZFromForm();
                 this.buttonSubgroupSelect.setDisplayString(StringUtils.translate("schematic_tiling.gui.editor.button.subgroup_label", this.formSubgroup));
                 this.saveSessionState();
+                this.initGui();
             });
         }
 
@@ -1452,8 +1530,10 @@ public class GuiSchematicTilingEditor extends GuiBase {
         if (this.inputTuneWidth != null) this.tuneWidthText = this.inputTuneWidth.getTextWrapper().trim();
         if (this.inputTuneLength != null) this.tuneLengthText = this.inputTuneLength.getTextWrapper().trim();
 
+        int[] tuneXs = this.getFineTuneRowXs(rx);
+
         // Width row at y = 78
-        this.buttonWidthComp = new ButtonGeneric(rx + 76, 78, 24, 18, this.widthIsBigger ? ">" : "<");
+        this.buttonWidthComp = new ButtonGeneric(tuneXs[0], 78, 24, 18, this.widthIsBigger ? ">" : "<");
         this.buttonWidthComp.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.comp_width"));
         this.addButton(this.buttonWidthComp, (btn, mBtn) -> {
             this.widthIsBigger = !this.widthIsBigger;
@@ -1461,12 +1541,12 @@ public class GuiSchematicTilingEditor extends GuiBase {
             this.initGui();
         });
 
-        this.inputTuneWidth = new GuiTextFieldGeneric(rx + 106, 78, 30, 18, this.font);
+        this.inputTuneWidth = new GuiTextFieldGeneric(tuneXs[1], 78, 30, 18, this.font);
         this.inputTuneWidth.setTextWrapper(this.tuneWidthText);
         this.addTextField(this.inputTuneWidth, null);
 
         // Length row at y = 122
-        this.buttonLengthComp = new ButtonGeneric(rx + 76, 122, 24, 18, this.lengthIsBigger ? ">" : "<");
+        this.buttonLengthComp = new ButtonGeneric(tuneXs[0], 122, 24, 18, this.lengthIsBigger ? ">" : "<");
         this.buttonLengthComp.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.comp_length"));
         this.addButton(this.buttonLengthComp, (btn, mBtn) -> {
             this.lengthIsBigger = !this.lengthIsBigger;
@@ -1474,13 +1554,13 @@ public class GuiSchematicTilingEditor extends GuiBase {
             this.initGui();
         });
 
-        this.inputTuneLength = new GuiTextFieldGeneric(rx + 106, 122, 30, 18, this.font);
+        this.inputTuneLength = new GuiTextFieldGeneric(tuneXs[1], 122, 30, 18, this.font);
         this.inputTuneLength.setTextWrapper(this.tuneLengthText);
         this.addTextField(this.inputTuneLength, null);
 
-        // Checkbox Normalize Origin Y at y = 168
+        // Checkbox after preview text (preview occupies ~148-178)
         this.checkboxNormalizeOriginY = new WidgetCheckBox(
-                rx, 168,
+                rx, 192,
                 Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED,
                 StringUtils.translate("schematic_tiling.gui.editor.checkbox.normalize_origin_y")
         );
@@ -1490,14 +1570,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
         });
         this.addWidget(this.checkboxNormalizeOriginY);
 
-        // Actions at y = 196
-        ButtonGeneric applyTuneBtn = new ButtonGeneric(rx, 196, 100, 20, StringUtils.translate("schematic_tiling.gui.editor.button.apply_origin"));
+        // Actions at y = 214
+        ButtonGeneric applyTuneBtn = new ButtonGeneric(rx, 214, 100, 20, StringUtils.translate("schematic_tiling.gui.editor.button.apply_origin"));
         applyTuneBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.apply_origin"));
         this.addButton(applyTuneBtn, (btn, mBtn) -> {
             this.applyFineTuning();
         });
 
-        ButtonGeneric resetOrigBtn = new ButtonGeneric(rx + 106, 196, 110, 20, StringUtils.translate("schematic_tiling.gui.editor.button.reset_auto"));
+        ButtonGeneric resetOrigBtn = new ButtonGeneric(rx + 106, 214, 110, 20, StringUtils.translate("schematic_tiling.gui.editor.button.reset_auto"));
         resetOrigBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.reset_auto"));
         this.addButton(resetOrigBtn, (btn, mBtn) -> {
             this.resetOrigin();
@@ -1610,16 +1690,10 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 }
             }
 
-            // 4. Mixed Z-dependence
-            boolean hasZ = tm.dependsOnZ();
-            boolean hasNoZ = !tm.dependsOnZ();
-            for (TileModel t : sgTiles) {
-                if (!t.getAssignedBoxName().equals(tm.getAssignedBoxName())) {
-                    if (t.dependsOnZ()) hasZ = true;
-                    else hasNoZ = true;
-                }
-            }
-            if (hasZ && hasNoZ) {
+            // 4. Mixed Z-dependence among saved tiles in this subgroup.
+            // The tile being configured inherits the subgroup Z flag on save, so do not
+            // compare a stale per-box Z against siblings.
+            if (this.hasMixedZDependence(sgTiles)) {
                 errors.add(StringUtils.translate("schematic_tiling.gui.editor.error.mixed_z_dependence"));
             }
         }
@@ -1662,18 +1736,24 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
         }
 
-        // Mixed Z dependence
-        boolean hasZ = false;
-        boolean hasNoZ = false;
-        for (TileModel t : sgTiles) {
-            if (t.dependsOnZ()) hasZ = true;
-            else hasNoZ = true;
-        }
-        if (hasZ && hasNoZ) {
+        if (this.hasMixedZDependence(sgTiles)) {
             errors.add(StringUtils.translate("schematic_tiling.gui.editor.error.mixed_z_dependence"));
         }
 
         return errors;
+    }
+
+    private boolean hasMixedZDependence(List<TileModel> tiles) {
+        if (tiles == null || tiles.size() < 2) {
+            return false;
+        }
+        boolean first = tiles.get(0).dependsOnZ();
+        for (int i = 1; i < tiles.size(); i++) {
+            if (tiles.get(i).dependsOnZ() != first) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String getRoleName(XDependence dep) {
@@ -1771,8 +1851,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         }
 
         GroupModel gm = this.groups.computeIfAbsent(group, GroupModel::new);
-        SubgroupModel targetSgm = gm.getSubgroups().get(subgroup);
-        boolean subDependsOnZ = (targetSgm != null) ? targetSgm.dependsOnZ() : sSubgroupDependsOnZ.getOrDefault(group + " // " + subgroup, false);
+        boolean subDependsOnZ = this.resolveSubgroupDependsOnZ(group, subgroup);
         this.currentDependsOnZ = subDependsOnZ;
 
         String generatedName = formatSubregionName(group, subgroup, tileName, this.currentRole, subDependsOnZ);
@@ -1821,18 +1900,13 @@ public class GuiSchematicTilingEditor extends GuiBase {
             this.currentDependsOnZ = dependsOnZ;
         }
 
-        // Batch update all existing boxes in selection belonging to this group
+        String newZ = dependsOnZ ? "1" : "0";
         List<String> allBoxes = new ArrayList<>(this.selection.getAllSubRegionNames());
         for (String boxName : allBoxes) {
             if (boxName.contains(TilingUnit.SEP)) {
                 String[] parts = boxName.split(TilingUnit.SEP);
                 if (parts.length >= 1 && parts[0].trim().equals(groupName)) {
-                    String subUnit = parts.length > 1 ? parts[1].trim() : "Tile";
-                    String xDep = parts.length > 2 ? parts[2].trim() : "t";
-                    String newZ = dependsOnZ ? "1" : "0";
-                    String outline = parts.length > 4 ? parts[4].trim() : "0";
-                    String newBoxName = parts[0].trim() + " // " + subUnit + " // " + xDep + " // " + newZ + " // " + outline;
-
+                    String newBoxName = this.rebuildTiledBoxName(parts, newZ);
                     if (!boxName.equals(newBoxName)) {
                         this.selection.renameSubRegionBox(boxName, newBoxName);
                         if (boxName.equals(this.editingBoxName)) {
@@ -1861,30 +1935,18 @@ public class GuiSchematicTilingEditor extends GuiBase {
             this.currentDependsOnZ = dependsOnZ;
         }
 
-        // Batch update all existing boxes in selection belonging to this subgroup
+        String newZ = dependsOnZ ? "1" : "0";
         List<String> allBoxes = new ArrayList<>(this.selection.getAllSubRegionNames());
         for (String boxName : allBoxes) {
             if (boxName.contains(TilingUnit.SEP)) {
                 String[] parts = boxName.split(TilingUnit.SEP);
-                if (parts.length >= 2 && parts[0].trim().equals(groupName)) {
-                    String subUnit = parts[1].trim();
-                    String boxSubgroup = "(None)";
-                    if (subUnit.contains("::")) {
-                        String[] subParts = subUnit.split("::", 2);
-                        boxSubgroup = subParts[0].trim();
-                    }
-                    if (boxSubgroup.equals(sgName)) {
-                        String xDep = parts.length > 2 ? parts[2].trim() : "t";
-                        String newZ = dependsOnZ ? "1" : "0";
-                        String outline = parts.length > 4 ? parts[4].trim() : "0";
-                        String newBoxName = parts[0].trim() + " // " + subUnit + " // " + xDep + " // " + newZ + " // " + outline;
-
-                        if (!boxName.equals(newBoxName)) {
-                            this.selection.renameSubRegionBox(boxName, newBoxName);
-                            if (boxName.equals(this.editingBoxName)) {
-                                this.editingBoxName = newBoxName;
-                                sLastEditingBoxName = newBoxName;
-                            }
+                if (parts.length >= 1 && parts[0].trim().equals(groupName) && sgName.equals(this.getBoxSubgroupName(boxName))) {
+                    String newBoxName = this.rebuildTiledBoxName(parts, newZ);
+                    if (!boxName.equals(newBoxName)) {
+                        this.selection.renameSubRegionBox(boxName, newBoxName);
+                        if (boxName.equals(this.editingBoxName)) {
+                            this.editingBoxName = newBoxName;
+                            sLastEditingBoxName = newBoxName;
                         }
                     }
                 }
@@ -2121,6 +2183,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
     @Override
     protected void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks) {
+        // Check if subregion names have changed (e.g., renamed via Litematica menu)
+        Collection<String> currentSubRegionNames = this.selection.getAllSubRegionNames();
+        if (!currentSubRegionNames.equals(this.lastKnownSubRegionNames)) {
+            this.parseSelectionBoxes();
+            this.initGui();
+            return;
+        }
+
         int screenW = this.getScreenWidth();
         int screenH = this.getScreenHeight();
 
@@ -2198,15 +2268,17 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 : StringUtils.translate("schematic_tiling.gui.editor.label.origin_auto", effective.getX(), effective.getY(), effective.getZ());
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.current_origin", origStr), rightX, 46, 0xFFCCCCCC);
 
+        int[] tuneXs = this.getFineTuneRowXs(rightX);
+
         this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.width_fine_tuning"), rightX, 64, 0xFFFFAA00);
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.schematic_is"), rightX, 82, COLOR_WHITE);
-        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.blocks"), rightX + 142, 82, COLOR_WHITE);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.blocks"), tuneXs[2], 82, COLOR_WHITE);
 
         this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.length_fine_tuning"), rightX, 108, 0xFFFFAA00);
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.schematic_is"), rightX, 126, COLOR_WHITE);
-        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.blocks"), rightX + 142, 126, COLOR_WHITE);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.blocks"), tuneXs[2], 126, COLOR_WHITE);
 
-        this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.preview_adjustment"), rightX, 150, 0xFF55FFFF);
+        this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.preview_adjustment"), rightX, 148, 0xFF55FFFF);
 
         String wText = (this.inputTuneWidth != null) ? this.inputTuneWidth.getTextWrapper() : this.tuneWidthText;
         String lText = (this.inputTuneLength != null) ? this.inputTuneLength.getTextWrapper() : this.tuneLengthText;
@@ -2220,11 +2292,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
         int previewY = (lowestY != null) ? lowestY : baseOrig.getY();
         BlockPos previewOrig = new BlockPos(baseOrig.getX() + pDx, previewY, baseOrig.getZ() + pDz);
 
-        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.origin_shift", pDx, pDz), rightX, 166, COLOR_WHITE);
-        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.new_origin", previewOrig.getX(), previewOrig.getY(), previewOrig.getZ()), rightX, 178, 0xFF55FF55);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.origin_shift", pDx, pDz), rightX, 162, COLOR_WHITE);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.new_origin", previewOrig.getX(), previewOrig.getY(), previewOrig.getZ()), rightX, 174, 0xFF55FF55);
+
+        // Hover text for normalize origin Y checkbox
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.hover.normalize_origin_y"), rightX, 206, 0xFFAAAAAA);
 
         if (this.statusMessage != null && this.statusIsError) {
-            this.drawString(ctx, "§c[!] " + this.statusMessage, rightX, 222, 0xFFFF4444);
+            this.drawWrappedError(ctx, this.statusMessage, rightX, 238, this.getScreenWidth() - rightX - 20, this.getScreenHeight() - 36);
         }
     }
 
@@ -2247,7 +2322,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.inputNameField.getTextWrapper().trim() : (this.formTileName != null ? this.formTileName : "Tile");
         GroupModel curGm = this.groups.get(curG);
         SubgroupModel curSgm = (curGm != null) ? curGm.getSubgroups().get(curSG) : null;
-        boolean curSubZ = (curSgm != null) ? curSgm.dependsOnZ() : sSubgroupDependsOnZ.getOrDefault(curG + " // " + curSG, false);
+        boolean curSubZ = this.resolveSubgroupDependsOnZ(curG, curSG);
         String previewName = formatSubregionName(
                 (curG == null || curG.isEmpty()) ? "Main" : curG,
                 (curSG == null || curSG.isEmpty()) ? "Sweepers" : curSG,
@@ -2258,7 +2333,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.generated_name"), rightX, 236, 0xFFFFAA00);
         this.drawString(ctx, previewName, rightX, 248, COLOR_WHITE);
 
-        TileModel activeTm = new TileModel(curTN, this.editingBoxName, this.currentRole, this.currentDependsOnZ);
+        TileModel activeTm = new TileModel(curTN, this.editingBoxName, this.currentRole, curSubZ);
         List<String> tileErrors = this.getTileErrors(curSgm, activeTm);
 
         int errY = 264;
@@ -2266,23 +2341,13 @@ public class GuiSchematicTilingEditor extends GuiBase {
         int maxErrW = this.getScreenWidth() - rightX - 20;
 
         if (this.statusMessage != null && this.statusIsError) {
-            List<String> wrapped = this.wrapText(this.statusMessage, maxErrW);
-            for (String wLine : wrapped) {
-                if (errY > screenBottom) break;
-                this.drawString(ctx, "§c[!] " + wLine, rightX, errY, 0xFFFF4444);
-                errY += 12;
-            }
+            errY = this.drawWrappedError(ctx, this.statusMessage, rightX, errY, maxErrW, screenBottom);
         }
 
         if (!tileErrors.isEmpty()) {
             for (String err : tileErrors) {
                 if (errY > screenBottom) break;
-                List<String> wrapped = this.wrapText(err, maxErrW);
-                for (String wLine : wrapped) {
-                    if (errY > screenBottom) break;
-                    this.drawString(ctx, "§c[!] " + wLine, rightX, errY, 0xFFFF4444);
-                    errY += 12;
-                }
+                errY = this.drawWrappedError(ctx, err, rightX, errY, maxErrW, screenBottom);
             }
         }
     }
@@ -2329,12 +2394,8 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.drawStringWithShadow(ctx, "§c" + StringUtils.translate("schematic_tiling.gui.editor.label.inconsistencies"), rightX, gErrY, 0xFFFF4444);
                 gErrY += 14;
                 for (String err : groupInconsistencies) {
-                    List<String> wrapped = this.wrapText(err, maxErrW);
-                    for (String wLine : wrapped) {
-                        if (gErrY > screenBottom) break;
-                        this.drawString(ctx, "§c[!] " + wLine, rightX + 6, gErrY, 0xFFFF4444);
-                        gErrY += 12;
-                    }
+                    if (gErrY > screenBottom) break;
+                    gErrY = this.drawWrappedError(ctx, err, rightX + 6, gErrY, maxErrW, screenBottom);
                 }
             }
         }
@@ -2376,12 +2437,8 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     int maxErrW = this.getScreenWidth() - rightX - 25;
                     int screenBottom = this.getScreenHeight() - 36;
                     for (String err : sgErrors) {
-                        List<String> wrapped = this.wrapText(err, maxErrW);
-                        for (String wLine : wrapped) {
-                            if (endY > screenBottom) break;
-                            this.drawString(ctx, "§c[!] " + wLine, rightX + 6, endY, 0xFFFF4444);
-                            endY += 12;
-                        }
+                        if (endY > screenBottom) break;
+                        endY = this.drawWrappedError(ctx, err, rightX + 6, endY, maxErrW, screenBottom);
                     }
                 }
             }
