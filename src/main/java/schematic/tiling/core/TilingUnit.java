@@ -75,6 +75,10 @@ public class TilingUnit {
         return this.dependsOnZ;
     }
 
+    public void setDependsOnZ(boolean dependsOnZ) {
+        this.dependsOnZ = dependsOnZ;
+    }
+
     public boolean isOutline() {
         return this.isOutline;
     }

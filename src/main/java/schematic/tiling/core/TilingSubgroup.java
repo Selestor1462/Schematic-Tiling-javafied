@@ -75,6 +75,9 @@ public class TilingSubgroup {
             if (widths.size() != uniqueWidths.size()) {
                 throw new AssertionError("Subgroup '" + sgId + "' has several tiles of the same size. That's ambiguous.");
             }
+            if (capCount > 0 && widths.isEmpty()) {
+                throw new AssertionError("Subgroup '" + sgId + "' has an End Cap but no modular tiles to tile.");
+            }
         } else if (outlineCount != 2 || this.units.size() != 2) {
             throw new AssertionError("The outline-generating subgroup '" + sgId + "' must have exactly 2 elements.");
         }

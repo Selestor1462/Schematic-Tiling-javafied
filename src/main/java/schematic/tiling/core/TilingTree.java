@@ -128,10 +128,8 @@ public class TilingTree {
 
     public boolean needsLength() {
         for (TilingGroup group : this.groups.values()) {
-            for (TilingUnit unit : group.walkUnits()) {
-                if (unit.dependsOnZ()) {
-                    return true;
-                }
+            if (group.dependsOnZ()) {
+                return true;
             }
         }
         return false;
