@@ -33,6 +33,21 @@ public class TilingGroup {
         return all;
     }
 
+    public boolean dependsOnZ() {
+        for (TilingUnit u : this.walkUnits()) {
+            if (u.dependsOnZ()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void setDependsOnZ(boolean dependsOnZ) {
+        for (TilingUnit u : this.walkUnits()) {
+            u.setDependsOnZ(dependsOnZ);
+        }
+    }
+
     public void verify() {
         for (TilingSubgroup sg : this.subgroups.values()) {
             sg.verify(this.name);
@@ -126,23 +141,9 @@ public class TilingGroup {
 
         int localOriginX = reg.getMinX();
         int localOriginY = reg.getMinY();
-        int localOriginZ;
-
-        boolean allDependOnZ = true;
-        for (TilingUnit u : this.walkUnits()) {
-            if (!u.dependsOnZ()) {
-                allDependOnZ = false;
-                break;
-            }
-        }
-
-        if (allDependOnZ) {
-            localOriginZ = reg.getMinZ() - zOffset;
-        } else {
-            localOriginZ = reg.getMinZ();
-        }
 
         for (TilingSubgroup subgr : this.subgroups.values()) {
+            int localOriginZ = subgr.dependsOnZ() ? (reg.getMinZ() - zOffset) : reg.getMinZ();
             subgr.stack(reg, localOriginX, localOriginY, localOriginZ);
         }
 
