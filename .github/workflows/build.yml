@@ -9,13 +9,20 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        branch:
+          - 1.21.4
+          - 1.21.10
+          - master
+          - 26.2
+          - 26.3
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -35,13 +42,30 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ github.ref_name }}
-          path: build/libs/*.jar
+          name: jars-${{ matrix.branch }}
+          path: build/libs/*[!sources].jar
 
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all built jars
+        uses: actions/download-artifact@v4
+        with:
+          path: all-jars
+
+      - name: Flatten jar files
+        run: |
+          mkdir release-jars
+          find all-jars -type f -name "*.jar" -exec cp {} release-jars/ \;
+          ls -la release-jars/
+
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/*[!sources].jar
+          files: release-jars/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
