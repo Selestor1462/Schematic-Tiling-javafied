@@ -16,12 +16,13 @@ This mod is an in-game Java port of the original Python tool [**Schematic-Tiling
 
 ---
 
-## How to Create Parts Schematics
+## Creating a Parts Schematic
 
-For detailed documentation, sub-region naming rules, syntax (`[dx, dy, dz]`), and guides on designing modular schematics, please refer to the original repository:
-> 📖 **[EQUENOS-2 / Schematic-Tiling Documentation](https://github.com/EQUENOS-2/Schematic-Tiling)**
+To start, create an area selection in Litematica's **Normal** selection mode with a name ending in `Parts` (e.g. `Farm_Parts` or `Bridge_Parts`).
 
-A parts schematic contains sub-regions named after tiling groups, subgroups, and units (e.g. `[16,0,0]`, `[0,0,16]`, `End`, `Start`, etc.).
+Once your selection has subregion boxes defined, open the area selection editor in Litematica (`Area Selection Editor`). You will see a **Tiling Setup** button in the top right corner. The built-in editor allows you to configure tiling groups, subgroups, modular roles, and origin fine-tuning directly in-game without manually formatting box names.
+
+For advanced documentation, syntax details, and design methodology behind modular parametric schematics, see the original [EQUENOS-2 / Schematic-Tiling Documentation](https://github.com/EQUENOS-2/Schematic-Tiling).
 
 ---
 
