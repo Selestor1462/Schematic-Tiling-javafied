@@ -75,6 +75,8 @@
   "schematic_tiling.gui.editor.checkbox.group_depends_on_z": "Group Depends on Z (Length)",
   "schematic_tiling.gui.editor.button.delete_group": "Delete Group",
   "schematic_tiling.gui.editor.hover.delete_group_untile": "Delete group '%s' and all its tiles (Hold Shift + Click)",
+  "schematic_tiling.gui.editor.title.no_groups": "No Groups",
+  "schematic_tiling.gui.editor.message.create_group_first": "Create a group or tile a box to get started",
 
   "schematic_tiling.gui.editor.hover.rename_subgroup": "Rename this subgroup everywhere",
   "schematic_tiling.gui.editor.checkbox.subgroup_depends_on_z": "Subgroup Depends on Z (Length)",
@@ -119,6 +121,7 @@
   "schematic_tiling.gui.editor.error.group_exists": "Group '%s' already exists!",
   "schematic_tiling.gui.editor.message.renamed_group": "Renamed group to '%s'",
   "schematic_tiling.gui.editor.error.subgroup_exists": "Subgroup '%s' already exists in group '%s'!",
+  "schematic_tiling.gui.editor.error.subgroup_not_exist": "Subgroup '%s' does not exist! Create it first.",
   "schematic_tiling.gui.editor.message.renamed_subgroup": "Renamed subgroup to '%s'",
 
   "schematic_tiling.gui.editor.error.same_width_conflict": "Ambiguous tile width: Width is %d blocks, same as '%s'. Modular tiles in a subgroup must have unique widths.",
@@ -133,6 +136,7 @@
   "schematic_tiling.gui.editor.message.created_box_no_subgroup": "Created new box: %s (No Subgroup)",
   "schematic_tiling.gui.editor.message.deleted_all_unassigned": "Deleted all unassigned boxes",
   "schematic_tiling.gui.editor.message.deleted_box": "Deleted box: %s",
+  "schematic_tiling.gui.editor.message.select_subgroup_first": "Please select a subgroup first before adding a tile",
 
   "schematic_tiling.gui.editor.title.fine_tune_origin": "Fine-Tune Manual Origin",
   "schematic_tiling.gui.editor.label.current_origin": "Current Origin: %s",

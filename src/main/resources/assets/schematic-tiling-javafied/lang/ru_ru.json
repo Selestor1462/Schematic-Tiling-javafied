@@ -75,6 +75,8 @@
   "schematic_tiling.gui.editor.checkbox.group_depends_on_z": "Группа зависит от Z (длины)",
   "schematic_tiling.gui.editor.button.delete_group": "Удалить группу",
   "schematic_tiling.gui.editor.hover.delete_group_untile": "Удалить группу '%s' и все её тайлы (Shift + Клик)",
+  "schematic_tiling.gui.editor.title.no_groups": "Нет групп",
+  "schematic_tiling.gui.editor.message.create_group_first": "Создайте группу или привяжите бокс, чтобы начать",
 
   "schematic_tiling.gui.editor.hover.rename_subgroup": "Переименовать эту подгруппу везде",
   "schematic_tiling.gui.editor.checkbox.subgroup_depends_on_z": "Подгруппа зависит от Z (длины)",
@@ -119,6 +121,7 @@
   "schematic_tiling.gui.editor.error.group_exists": "Группа '%s' уже существует!",
   "schematic_tiling.gui.editor.message.renamed_group": "Группа переименована в '%s'",
   "schematic_tiling.gui.editor.error.subgroup_exists": "Подгруппа '%s' уже существует в группе '%s'!",
+  "schematic_tiling.gui.editor.error.subgroup_not_exist": "Подгруппа '%s' не существует! Сначала создайте её.",
   "schematic_tiling.gui.editor.message.renamed_subgroup": "Подгруппа переименована в '%s'",
 
   "schematic_tiling.gui.editor.error.same_width_conflict": "Неоднозначная ширина: Ширина %d блоков, как у '%s'. Модульные тайлы в подгруппе должны иметь уникальную ширину.",
@@ -133,6 +136,7 @@
   "schematic_tiling.gui.editor.message.created_box_no_subgroup": "Создан новый бокс: %s (без подгруппы)",
   "schematic_tiling.gui.editor.message.deleted_all_unassigned": "Удалены все неназначенные боксы",
   "schematic_tiling.gui.editor.message.deleted_box": "Удалён бокс: %s",
+  "schematic_tiling.gui.editor.message.select_subgroup_first": "Пожалуйста, сначала выберите подгруппу перед добавлением тайла",
 
   "schematic_tiling.gui.editor.title.fine_tune_origin": "Точная подгонка точки привязки",
   "schematic_tiling.gui.editor.label.current_origin": "Текущая точка привязки: %s",

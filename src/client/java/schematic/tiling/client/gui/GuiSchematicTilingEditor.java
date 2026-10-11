@@ -97,22 +97,13 @@ public class GuiSchematicTilingEditor extends GuiBase {
     public static class GroupModel {
         private String name;
         private final Map<String, SubgroupModel> subgroups = new LinkedHashMap<>();
+        private boolean dependsOnZ = false;
 
         public GroupModel(String name) { this.name = name; }
         public String getName() { return this.name; }
         public void setName(String name) { this.name = name; }
-        public boolean dependsOnZ() {
-            if (this.subgroups.isEmpty()) return false;
-            for (SubgroupModel sg : this.subgroups.values()) {
-                if (!sg.dependsOnZ()) return false;
-            }
-            return true;
-        }
-        public void setDependsOnZ(boolean dependsOnZ) {
-            for (SubgroupModel sg : this.subgroups.values()) {
-                sg.setDependsOnZ(dependsOnZ);
-            }
-        }
+        public boolean dependsOnZ() { return this.dependsOnZ; }
+        public void setDependsOnZ(boolean dependsOnZ) { this.dependsOnZ = dependsOnZ; }
         public Map<String, SubgroupModel> getSubgroups() { return this.subgroups; }
     }
 
@@ -178,7 +169,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private static String sLastSelectedGroup = "Main";
     private static String sLastSelectedSubgroup = null;
     private static String sLastFormGroup = "Main";
-    private static String sLastFormSubgroup = "Sweepers";
+    private static String sLastFormSubgroup = null;
     private static String sLastTileName = null;
     private static XDependence sLastRole = XDependence.TILE;
     private static boolean sLastDependsOnZ = false;
@@ -189,24 +180,25 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private static String sLastTuneWidth = "0";
     private static String sLastTuneLength = "0";
     private static boolean sLastNormalizeOriginY = false;
-    private static final Map<String, Set<String>> sRetainedStructure = new LinkedHashMap<>();
-    private static final Map<String, Boolean> sGroupDependsOnZ = new LinkedHashMap<>();
-    private static final Map<String, Boolean> sSubgroupDependsOnZ = new LinkedHashMap<>();
 
     private final AreaSelection selection;
     private final Map<String, GroupModel> groups = new LinkedHashMap<>();
     private final List<String> unassignedBoxes = new ArrayList<>();
     private Set<String> lastKnownSubRegionNames = new LinkedHashSet<>();
+    // Track empty groups/subgroups (those without tiles) during session
+    private final Map<String, Set<String>> emptyStructure = new LinkedHashMap<>();
+    private final Map<String, Boolean> groupDependsOnZ = new LinkedHashMap<>();
+    private final Map<String, Boolean> subgroupDependsOnZ = new LinkedHashMap<>();
 
-    private String selectedGroupName = "Main";
+    private String selectedGroupName = null;
     private String selectedSubgroupName = null;
 
     // Currently configuring box
     private String editingBoxName = null;
 
     // Config form values
-    private String formGroup = "Main";
-    private String formSubgroup = "Sweepers";
+    private String formGroup = null;
+    private String formSubgroup = null;
     private String formTileName = null;
     private boolean isCustomGroup = false;
     private boolean isCustomSubgroup = false;
@@ -293,10 +285,17 @@ public class GuiSchematicTilingEditor extends GuiBase {
     }
 
     private void parseSelectionBoxes() {
-        // Collect existing groups/subgroups from instance into sRetainedStructure
+        // Collect existing empty subgroups before clearing
+        Map<String, Set<String>> existingEmpty = new LinkedHashMap<>();
         for (Map.Entry<String, GroupModel> gEntry : this.groups.entrySet()) {
-            Set<String> sgs = sRetainedStructure.computeIfAbsent(gEntry.getKey(), k -> new LinkedHashSet<>());
-            sgs.addAll(gEntry.getValue().getSubgroups().keySet());
+            Set<String> emptySgs = new LinkedHashSet<>();
+            for (SubgroupModel sg : gEntry.getValue().getSubgroups().values()) {
+                if (sg.getTiles().isEmpty()) {
+                    emptySgs.add(sg.getName());
+                }
+            }
+            // Track all groups - even empty ones - to preserve them across GUI sessions
+            existingEmpty.put(gEntry.getKey(), emptySgs);
         }
 
         this.groups.clear();
@@ -316,7 +315,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 }
 
                 GroupModel group = this.groups.computeIfAbsent(groupName, GroupModel::new);
-                String sgName = "Sweepers";
+                String sgName = null;
                 String unitName = subgroupId;
                 if (subgroupId.contains("::")) {
                     String[] subParts = subgroupId.split("::", 2);
@@ -324,61 +323,71 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     unitName = subParts[1].trim();
                 }
 
-                SubgroupModel sg = group.getSubgroups().computeIfAbsent(sgName, SubgroupModel::new);
-                TileModel tm = new TileModel(unitName.isEmpty() ? boxName : unitName, boxName);
-                tm.setXDep(xDep);
-                tm.setDependsOnZ(zDep);
-                sg.getTiles().add(tm);
+                if (sgName != null) {
+                    SubgroupModel sg = group.getSubgroups().computeIfAbsent(sgName, SubgroupModel::new);
+                    TileModel tm = new TileModel(unitName.isEmpty() ? boxName : unitName, boxName);
+                    tm.setXDep(xDep);
+                    tm.setDependsOnZ(zDep);
+                    sg.getTiles().add(tm);
+                } else {
+                    // Box without subgroup - add directly to group (shouldn't happen with new format but handle for compatibility)
+                    this.unassignedBoxes.add(boxName);
+                }
             } else {
                 this.unassignedBoxes.add(boxName);
             }
         }
 
-        // Restore any user-created groups and subgroups
-        for (Map.Entry<String, Set<String>> entry : sRetainedStructure.entrySet()) {
+        // Restore empty groups/subgroups
+        for (Map.Entry<String, Set<String>> entry : existingEmpty.entrySet()) {
             GroupModel gm = this.groups.computeIfAbsent(entry.getKey(), GroupModel::new);
+            // Restore group Z-dependence
+            if (groupDependsOnZ.containsKey(entry.getKey())) {
+                gm.setDependsOnZ(groupDependsOnZ.get(entry.getKey()));
+            }
+            // Add to emptyStructure to preserve group even if it has no subgroups
+            emptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+            // Restore empty subgroups
             for (String sgName : entry.getValue()) {
-                if (!"(None)".equals(sgName)) {
-                    gm.getSubgroups().computeIfAbsent(sgName, SubgroupModel::new);
+                if (!gm.getSubgroups().containsKey(sgName)) {
+                    SubgroupModel sg = new SubgroupModel(sgName);
+                    String sgKey = gm.getName() + " // " + sgName;
+                    if (subgroupDependsOnZ.containsKey(sgKey)) {
+                        sg.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
+                    }
+                    gm.getSubgroups().put(sgName, sg);
                 }
             }
         }
 
-        if (this.groups.isEmpty()) {
-            GroupModel defGroup = new GroupModel("Main");
-            defGroup.getSubgroups().put("Sweepers", new SubgroupModel("Sweepers"));
-            this.groups.put("Main", defGroup);
-            sRetainedStructure.computeIfAbsent("Main", k -> new LinkedHashSet<>()).add("Sweepers");
-        }
-
         for (GroupModel gm : this.groups.values()) {
-            if (gm.getSubgroups().isEmpty()) {
-                gm.getSubgroups().put("Sweepers", new SubgroupModel("Sweepers"));
-                sRetainedStructure.computeIfAbsent(gm.getName(), k -> new LinkedHashSet<>()).add("Sweepers");
-            }
             for (SubgroupModel sgm : gm.getSubgroups().values()) {
                 String sgKey = gm.getName() + " // " + sgm.getName();
                 if (sgm.getTiles().isEmpty()) {
-                    if (sSubgroupDependsOnZ.containsKey(sgKey)) {
-                        sgm.setDependsOnZ(sSubgroupDependsOnZ.get(sgKey));
+                    if (subgroupDependsOnZ.containsKey(sgKey)) {
+                        sgm.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
                     }
                 } else if (!this.hasMixedZDependence(sgm.getTiles())) {
                     boolean allZ = sgm.getTiles().get(0).dependsOnZ();
                     sgm.setDependsOnZ(allZ);
-                    sSubgroupDependsOnZ.put(sgKey, allZ);
-                } else if (sSubgroupDependsOnZ.containsKey(sgKey)) {
-                    sgm.setDependsOnZ(sSubgroupDependsOnZ.get(sgKey));
+                    subgroupDependsOnZ.put(sgKey, allZ);
+                } else if (subgroupDependsOnZ.containsKey(sgKey)) {
+                    sgm.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
                 } else {
                     sgm.setDependsOnZ(false);
-                    sSubgroupDependsOnZ.put(sgKey, false);
+                    subgroupDependsOnZ.put(sgKey, false);
                 }
                 sgm.sortTiles();
             }
-            sGroupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
+            groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
         }
 
         if (this.selectedGroupName == null || !this.groups.containsKey(this.selectedGroupName)) {
-            this.selectedGroupName = this.groups.keySet().iterator().next();
+            if (!this.groups.isEmpty()) {
+                this.selectedGroupName = this.groups.keySet().iterator().next();
+            } else {
+                this.selectedGroupName = null;
+            }
         }
         GroupModel activeGroup = this.groups.get(this.selectedGroupName);
         if (this.selectedSubgroupName != null && activeGroup != null && !activeGroup.getSubgroups().containsKey(this.selectedSubgroupName)) {
@@ -388,36 +397,42 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
     public static String formatSubregionName(String group, String subgroup, String tileName, XDependence xDep, boolean zDep) {
         String sg = (subgroup != null && !subgroup.trim().isEmpty() && !subgroup.equalsIgnoreCase("(None)") && !subgroup.equalsIgnoreCase("None"))
-                ? subgroup.trim() : "Sweepers";
-        String unitId = sg + "::" + tileName.trim();
+                ? subgroup.trim() : null;
+        String unitId = (sg != null) ? sg + "::" + tileName.trim() : tileName.trim();
         return group.trim() + " // " + unitId + " // " + xDep.getCode() + " // " + (zDep ? "1" : "0") + " // 0";
     }
 
     private String getBoxSubgroupName(String boxName) {
         if (boxName == null || !boxName.contains(TilingUnit.SEP)) {
-            return "Sweepers";
+            return null;
         }
         String[] parts = boxName.split(TilingUnit.SEP);
         if (parts.length < 2) {
-            return "Sweepers";
+            return null;
         }
         String subUnit = parts[1].trim();
         if (subUnit.contains("::")) {
             return subUnit.split("::", 2)[0].trim();
         }
-        return "Sweepers";
+        return null;
     }
 
     private boolean resolveSubgroupDependsOnZ(String groupName, String sgName) {
         if (groupName == null || sgName == null) {
             return false;
         }
+        // First check the subgroupDependsOnZ map (for empty subgroups)
+        Boolean zVal = subgroupDependsOnZ.get(groupName + " // " + sgName);
+        if (zVal != null) {
+            return zVal;
+        }
+        // Then check the subgroup model (for subgroups with tiles)
         GroupModel gm = this.groups.get(groupName);
         SubgroupModel sgm = (gm != null) ? gm.getSubgroups().get(sgName) : null;
         if (sgm != null) {
             return sgm.dependsOnZ();
         }
-        return sSubgroupDependsOnZ.getOrDefault(groupName + " // " + sgName, false);
+        return false;
     }
 
     private void syncDependsOnZFromForm() {
@@ -516,6 +531,21 @@ public class GuiSchematicTilingEditor extends GuiBase {
     }
 
     private void createUnnamedBox() {
+        // Ensure at least one group exists
+        if (this.groups.isEmpty()) {
+            this.groups.put("Main", new GroupModel("Main"));
+            this.selectedGroupName = "Main";
+            this.formGroup = "Main";
+        }
+
+        // Preserve all groups before parsing
+        Map<String, GroupModel> preservedGroups = new LinkedHashMap<>(this.groups);
+        Map<String, Boolean> preservedGroupZ = new LinkedHashMap<>(groupDependsOnZ);
+        Map<String, Set<String>> preservedEmptyStructure = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> entry : emptyStructure.entrySet()) {
+            preservedEmptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+        }
+
         BlockPos pos = (this.mc.player != null) ? this.mc.player.blockPosition() : BlockPos.ZERO;
         String desiredName = this.getNextUnnamedBoxName();
         String createdName = this.selection.createNewSubRegionBox(pos, desiredName);
@@ -523,6 +553,18 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
         this.selection.setSelectedSubRegionBox(actualName);
         this.parseSelectionBoxes();
+        
+        // Restore all preserved groups
+        for (Map.Entry<String, GroupModel> entry : preservedGroups.entrySet()) {
+            if (!this.groups.containsKey(entry.getKey())) {
+                this.groups.put(entry.getKey(), entry.getValue());
+            }
+        }
+        // Restore Z-dependence maps
+        groupDependsOnZ.putAll(preservedGroupZ);
+        emptyStructure.clear();
+        emptyStructure.putAll(preservedEmptyStructure);
+        
         this.openBoxForConfig(actualName);
         this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.created_box", actualName));
         this.initGui();
@@ -555,7 +597,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             String subgroupId = parts.length > 1 ? parts[1].trim() : "";
             this.currentRole = parts.length > 2 ? XDependence.fromCode(parts[2].trim()) : XDependence.TILE;
             this.selectedGroupName = this.formGroup;
-            this.formSubgroup = "Sweepers";
+            this.formSubgroup = null;
             String tName = subgroupId;
             if (subgroupId.contains("::")) {
                 String[] subParts = subgroupId.split("::", 2);
@@ -622,11 +664,22 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 sLastTileName = typed;
             }
         }
+        if (this.isRenamingGroupRight && this.inputRenameGroupRight != null) {
+            String typed = this.inputRenameGroupRight.getTextWrapper().trim();
+            if (!typed.isEmpty()) {
+                this.formGroup = typed;
+            }
+        }
+        if (this.isRenamingSubgroupRight && this.inputRenameSubgroupRight != null) {
+            String typed = this.inputRenameSubgroupRight.getTextWrapper().trim();
+            if (!typed.isEmpty()) {
+                this.formSubgroup = typed;
+            }
+        }
         if (this.isCustomGroup && this.inputCustomGroup != null) {
             String typed = this.inputCustomGroup.getTextWrapper().trim();
             if (!typed.isEmpty()) {
                 this.groups.computeIfAbsent(typed, GroupModel::new);
-                sRetainedStructure.computeIfAbsent(typed, k -> new LinkedHashSet<>());
                 this.formGroup = typed;
                 this.selectedGroupName = typed;
             }
@@ -636,7 +689,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
             if (!typed.isEmpty()) {
                 GroupModel currentGm = this.groups.computeIfAbsent(this.formGroup, GroupModel::new);
                 currentGm.getSubgroups().computeIfAbsent(typed, SubgroupModel::new);
-                sRetainedStructure.computeIfAbsent(this.formGroup, k -> new LinkedHashSet<>()).add(typed);
                 this.formSubgroup = typed;
             }
         }
@@ -658,9 +710,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
         sLastTuneWidth = this.tuneWidthText;
         sLastTuneLength = this.tuneLengthText;
         for (GroupModel gm : this.groups.values()) {
-            sGroupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
+            groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
             for (SubgroupModel sgm : gm.getSubgroups().values()) {
-                sSubgroupDependsOnZ.put(gm.getName() + " // " + sgm.getName(), sgm.dependsOnZ());
+                subgroupDependsOnZ.put(gm.getName() + " // " + sgm.getName(), sgm.dependsOnZ());
             }
         }
     }
@@ -774,7 +826,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.addButton(addGBtn, (btn, mBtn) -> {
             String newGName = "Group_" + (this.groups.size() + 1);
             this.groups.put(newGName, new GroupModel(newGName));
-            sRetainedStructure.computeIfAbsent(newGName, k -> new LinkedHashSet<>());
             this.selectedGroupName = newGName;
             this.selectedSubgroupName = null;
             this.editingBoxName = null;
@@ -797,8 +848,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
             addSGBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.new_subgroup", this.selectedGroupName));
             this.addButton(addSGBtn, (btn, mBtn) -> {
                 String newSG = "Subgroup_" + (activeGroup.getSubgroups().size() + 1);
-                activeGroup.getSubgroups().put(newSG, new SubgroupModel(newSG));
-                sRetainedStructure.computeIfAbsent(this.selectedGroupName, k -> new LinkedHashSet<>()).add(newSG);
+                SubgroupModel newSgModel = new SubgroupModel(newSG);
+                newSgModel.setDependsOnZ(activeGroup.dependsOnZ());
+                activeGroup.getSubgroups().put(newSG, newSgModel);
+                if (activeGroup.dependsOnZ()) {
+                    subgroupDependsOnZ.put(this.selectedGroupName + " // " + newSG, true);
+                }
+                // Track as empty subgroup
+                emptyStructure.computeIfAbsent(this.selectedGroupName, k -> new LinkedHashSet<>()).add(newSG);
                 this.selectedSubgroupName = newSG;
                 this.formSubgroup = newSG;
                 this.editingBoxName = null;
@@ -830,6 +887,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
                             this.saveSessionState();
                             this.initGui();
                         } else {
+                            // Preserve all groups before parsing
+                            Map<String, GroupModel> preservedGroups = new LinkedHashMap<>(this.groups);
+                            Map<String, Boolean> preservedGroupZ = new LinkedHashMap<>(groupDependsOnZ);
+                            Map<String, Set<String>> preservedEmptyStructure = new LinkedHashMap<>();
+                            for (Map.Entry<String, Set<String>> entry : emptyStructure.entrySet()) {
+                                preservedEmptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+                            }
+
                             BlockPos pos = (this.mc.player != null) ? this.mc.player.blockPosition() : BlockPos.ZERO;
                             String desiredName = this.getNextUnnamedBoxName();
                             String createdName = this.selection.createNewSubRegionBox(pos, desiredName);
@@ -837,11 +902,30 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
                             this.selection.setSelectedSubRegionBox(actualName);
                             this.parseSelectionBoxes();
+                            
+                            // Restore all preserved groups
+                            for (Map.Entry<String, GroupModel> entry : preservedGroups.entrySet()) {
+                                if (!this.groups.containsKey(entry.getKey())) {
+                                    this.groups.put(entry.getKey(), entry.getValue());
+                                }
+                            }
+                            // Restore Z-dependence maps
+                            groupDependsOnZ.putAll(preservedGroupZ);
+                            emptyStructure.clear();
+                            emptyStructure.putAll(preservedEmptyStructure);
+                            
                             this.openBoxForConfig(actualName);
                             this.formGroup = this.selectedGroupName;
                             this.formSubgroup = sgName;
                             this.syncDependsOnZFromForm();
                             this.selectedSubgroupName = null;
+                            
+                            // Remove from emptyStructure since it will now have a tile
+                            Set<String> groupEmptySgs = emptyStructure.get(this.selectedGroupName);
+                            if (groupEmptySgs != null) {
+                                groupEmptySgs.remove(sgName);
+                            }
+                            
                             this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.created_box", actualName));
                             this.saveSessionState();
                             this.initGui();
@@ -862,9 +946,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     boolean sgHasError = !sgErrors.isEmpty();
 
                     int rowW = btnAddTileX - 18 - 4;
-                    boolean isSGSel = sgName.equals(this.selectedSubgroupName) && this.editingBoxName == null;
+                    boolean isSGSel = sgName != null && sgName.equals(this.selectedSubgroupName) && this.editingBoxName == null;
                     boolean isParentOfEditing = this.editingBoxName != null &&
-                            (sg.containsBox(this.editingBoxName) || sgName.equals(this.formSubgroup));
+                            (sg.containsBox(this.editingBoxName) || (sgName != null && sgName.equals(this.formSubgroup)));
 
                     boolean isSgZ = sg.dependsOnZ();
                     String sgLabel = (isSGSel ? "▶ " : "▼ ") + (sgHasError ? "! " : "") + sg.getName() + (isSgZ ? " [Z]" : "") + " (" + sg.getTiles().size() + ")";
@@ -945,8 +1029,22 @@ public class GuiSchematicTilingEditor extends GuiBase {
                                 InfoUtils.showGuiOrInGameMessage(MessageType.WARNING, StringUtils.translate("schematic_tiling.gui.editor.warning.shift_delete_tile_box", tm.getName()));
                                 return;
                             }
+                            // Check if subgroup will become empty after deletion
+                            String groupName = this.selectedGroupName;
+                            String subgroupName = sg.getName();
+                            boolean willBecomeEmpty = sg.getTiles().size() == 1;
+                            
+                            // Remove tile from model
+                            sg.getTiles().remove(tm);
+                            
                             this.selection.removeSubRegionBox(tm.getAssignedBoxName());
-                            this.parseSelectionBoxes();
+                            
+                            // If subgroup will become empty, track it in emptyStructure
+                            if (willBecomeEmpty && groupName != null && subgroupName != null) {
+                                emptyStructure.computeIfAbsent(groupName, k -> new LinkedHashSet<>()).add(subgroupName);
+                            }
+                            
+                            // Don't call parseSelectionBoxes - we've already manually updated the model and selection
                             if (tm.getAssignedBoxName().equals(this.editingBoxName)) {
                                 this.editingBoxName = null;
                             }
@@ -1016,10 +1114,10 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 for (String uName : new ArrayList<>(this.unassignedBoxes)) {
                     this.selection.removeSubRegionBox(uName);
                 }
+                this.unassignedBoxes.clear();
                 if (this.unassignedBoxes.contains(this.editingBoxName)) {
                     this.editingBoxName = null;
                 }
-                this.parseSelectionBoxes();
                 this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.deleted_all_unassigned"));
                 this.initGui();
             });
@@ -1142,7 +1240,17 @@ public class GuiSchematicTilingEditor extends GuiBase {
         );
         this.checkboxDependsOnZ.setChecked(gz, false);
         this.checkboxDependsOnZ.setListener(cb -> {
-            this.setGroupDependsOnZ(this.selectedGroupName, cb.isChecked());
+            gm.setDependsOnZ(cb.isChecked());
+            groupDependsOnZ.put(this.selectedGroupName, cb.isChecked());
+            // Update existing subgroups' Z-dependence
+            for (String sgName : gm.getSubgroups().keySet()) {
+                subgroupDependsOnZ.put(this.selectedGroupName + " // " + sgName, cb.isChecked());
+                SubgroupModel sg = gm.getSubgroups().get(sgName);
+                if (sg != null) {
+                    sg.setDependsOnZ(cb.isChecked());
+                }
+            }
+            this.saveSessionState();
             this.initGui();
         });
         this.addWidget(this.checkboxDependsOnZ);
@@ -1152,8 +1260,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
         newSGBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.new_subgroup", this.selectedGroupName));
         this.addButton(newSGBtn, (btn, mBtn) -> {
             String newSG = "Subgroup_" + (gm.getSubgroups().size() + 1);
-            gm.getSubgroups().put(newSG, new SubgroupModel(newSG));
-            sRetainedStructure.computeIfAbsent(this.selectedGroupName, k -> new LinkedHashSet<>()).add(newSG);
+            SubgroupModel newSgModel = new SubgroupModel(newSG);
+            newSgModel.setDependsOnZ(gm.dependsOnZ());
+            gm.getSubgroups().put(newSG, newSgModel);
+            if (gm.dependsOnZ()) {
+                subgroupDependsOnZ.put(this.selectedGroupName + " // " + newSG, true);
+            }
+            // Track as empty subgroup
+            emptyStructure.computeIfAbsent(this.selectedGroupName, k -> new LinkedHashSet<>()).add(newSG);
             this.selectedSubgroupName = newSG;
             this.formSubgroup = newSG;
             this.saveSessionState();
@@ -1216,7 +1330,11 @@ public class GuiSchematicTilingEditor extends GuiBase {
         ButtonGeneric addTileBtn = new ButtonGeneric(rx, 136, 95, 18, StringUtils.translate("schematic_tiling.gui.editor.button.add_tile"));
         addTileBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.tile_box_into_subgroup", this.selectedSubgroupName));
         this.addButton(addTileBtn, (btn, mBtn) -> {
-            String targetSg = this.selectedSubgroupName != null ? this.selectedSubgroupName : "Sweepers";
+            if (this.selectedSubgroupName == null) {
+                this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.select_subgroup_first"));
+                return;
+            }
+            String targetSg = this.selectedSubgroupName;
             String targetGroup = this.selectedGroupName != null ? this.selectedGroupName : "Main";
             if (!this.unassignedBoxes.isEmpty()) {
                 this.openBoxForConfig(this.unassignedBoxes.get(0));
@@ -1227,6 +1345,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.saveSessionState();
                 this.initGui();
             } else {
+                // Preserve all groups before parsing
+                Map<String, GroupModel> preservedGroups = new LinkedHashMap<>(this.groups);
+                Map<String, Boolean> preservedGroupZ = new LinkedHashMap<>(groupDependsOnZ);
+                Map<String, Set<String>> preservedEmptyStructure = new LinkedHashMap<>();
+                for (Map.Entry<String, Set<String>> entry : emptyStructure.entrySet()) {
+                    preservedEmptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+                }
+
                 BlockPos pos = (this.mc.player != null) ? this.mc.player.blockPosition() : BlockPos.ZERO;
                 String desiredName = this.getNextUnnamedBoxName();
                 String createdName = this.selection.createNewSubRegionBox(pos, desiredName);
@@ -1234,11 +1360,30 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
                 this.selection.setSelectedSubRegionBox(actualName);
                 this.parseSelectionBoxes();
+                
+                // Restore all preserved groups
+                for (Map.Entry<String, GroupModel> entry : preservedGroups.entrySet()) {
+                    if (!this.groups.containsKey(entry.getKey())) {
+                        this.groups.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                // Restore Z-dependence maps
+                groupDependsOnZ.putAll(preservedGroupZ);
+                emptyStructure.clear();
+                emptyStructure.putAll(preservedEmptyStructure);
+                
                 this.openBoxForConfig(actualName);
                 this.formGroup = targetGroup;
                 this.formSubgroup = targetSg;
                 this.syncDependsOnZFromForm();
                 this.selectedSubgroupName = null;
+                
+                // Remove from emptyStructure since it will now have a tile
+                Set<String> groupEmptySgs = emptyStructure.get(targetGroup);
+                if (groupEmptySgs != null) {
+                    groupEmptySgs.remove(targetSg);
+                }
+                
                 this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.created_box", actualName));
                 this.saveSessionState();
                 this.initGui();
@@ -1280,6 +1425,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             ButtonGeneric cancelGBtn = new ButtonGeneric(rx + rw - 24, ryGroup, 20, 18, "X");
             this.addButton(cancelGBtn, (btn, mBtn) -> {
                 this.isRenamingGroupRight = false;
+                this.saveSessionState();
                 this.initGui();
             });
         } else if (this.isCustomGroup) {
@@ -1293,7 +1439,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     this.formGroup = trimmed;
                     this.selectedGroupName = trimmed;
                     this.groups.computeIfAbsent(trimmed, GroupModel::new);
-                    sRetainedStructure.computeIfAbsent(trimmed, k -> new LinkedHashSet<>());
                 }
             });
 
@@ -1302,9 +1447,11 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 String newG = this.inputCustomGroup.getTextWrapper().trim();
                 if (!newG.isEmpty()) {
                     this.groups.computeIfAbsent(newG, GroupModel::new);
-                    sRetainedStructure.computeIfAbsent(newG, k -> new LinkedHashSet<>());
                     this.formGroup = newG;
                     this.selectedGroupName = newG;
+                    // Reset subgroup when creating/selecting new group
+                    this.formSubgroup = null;
+                    this.isCustomSubgroup = false;
                 }
                 this.isCustomGroup = false;
                 this.saveSessionState();
@@ -1324,6 +1471,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 int idx = groupNames.indexOf(this.formGroup);
                 int next = (idx + 1) % groupNames.size();
                 this.formGroup = groupNames.get(next);
+                // Reset subgroup when switching groups
+                this.formSubgroup = null;
+                this.isCustomSubgroup = false;
                 this.syncDependsOnZFromForm();
                 this.buttonGroupSelect.setDisplayString(StringUtils.translate("schematic_tiling.gui.editor.button.group_label", this.formGroup));
                 this.saveSessionState();
@@ -1343,7 +1493,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.isCustomGroup = true;
                 String newG = "Group_" + (this.groups.size() + 1);
                 this.groups.computeIfAbsent(newG, GroupModel::new);
-                sRetainedStructure.computeIfAbsent(newG, k -> new LinkedHashSet<>());
                 this.formGroup = newG;
                 this.selectedGroupName = newG;
                 this.saveSessionState();
@@ -1361,9 +1510,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     sgNames.add(s);
                 }
             }
-        }
-        if (sgNames.isEmpty()) {
-            sgNames.add("Sweepers");
         }
 
         if (this.isRenamingSubgroupRight) {
@@ -1385,6 +1531,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             ButtonGeneric cancelSGBtn = new ButtonGeneric(rx + rw - 24, rySubgroup, 20, 18, "X");
             this.addButton(cancelSGBtn, (btn, mBtn) -> {
                 this.isRenamingSubgroupRight = false;
+                this.saveSessionState();
                 this.initGui();
             });
         } else if (this.isCustomSubgroup) {
@@ -1398,7 +1545,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     this.formSubgroup = trimmed;
                     GroupModel currentGm = this.groups.computeIfAbsent(this.formGroup, GroupModel::new);
                     currentGm.getSubgroups().computeIfAbsent(trimmed, SubgroupModel::new);
-                    sRetainedStructure.computeIfAbsent(this.formGroup, k -> new LinkedHashSet<>()).add(trimmed);
                 }
             });
 
@@ -1407,8 +1553,13 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 String newSG = this.inputCustomSubgroup.getTextWrapper().trim();
                 if (!newSG.isEmpty()) {
                     GroupModel currentGm = this.groups.computeIfAbsent(this.formGroup, GroupModel::new);
-                    currentGm.getSubgroups().computeIfAbsent(newSG, SubgroupModel::new);
-                    sRetainedStructure.computeIfAbsent(this.formGroup, k -> new LinkedHashSet<>()).add(newSG);
+                    SubgroupModel sg = currentGm.getSubgroups().computeIfAbsent(newSG, SubgroupModel::new);
+                    sg.setDependsOnZ(currentGm.dependsOnZ());
+                    if (currentGm.dependsOnZ()) {
+                        subgroupDependsOnZ.put(this.formGroup + " // " + newSG, true);
+                    }
+                    // Track as empty subgroup
+                    emptyStructure.computeIfAbsent(this.formGroup, k -> new LinkedHashSet<>()).add(newSG);
                     this.formSubgroup = newSG;
                     this.selectedGroupName = this.formGroup;
                 }
@@ -1423,15 +1574,19 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.initGui();
             });
         } else {
-            if (this.formSubgroup == null || !sgNames.contains(this.formSubgroup)) {
+            // Only auto-select first subgroup if subgroups exist and current selection is invalid
+            if (!sgNames.isEmpty() && (this.formSubgroup == null || !sgNames.contains(this.formSubgroup))) {
                 this.formSubgroup = sgNames.get(0);
                 this.syncDependsOnZFromForm();
+            } else if (sgNames.isEmpty()) {
+                // No subgroups exist, clear formSubgroup
+                this.formSubgroup = null;
             }
             int cycleBtnW = rw - 94;
 
             ButtonGeneric renSGBtn = new ButtonGeneric(rx + rw - 90, rySubgroup, 46, 18, StringUtils.translate("schematic_tiling.gui.editor.button.rename_compact"));
             renSGBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.rename_subgroup"));
-            renSGBtn.setEnabled(true);
+            renSGBtn.setEnabled(this.formSubgroup != null);
             this.addButton(renSGBtn, (btn, mBtn) -> {
                 this.isRenamingSubgroupRight = true;
                 this.initGui();
@@ -1445,15 +1600,20 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 String newSG = "Subgroup_" + sgCount;
                 this.formSubgroup = newSG;
                 GroupModel currentGm = this.groups.computeIfAbsent(this.formGroup, GroupModel::new);
-                currentGm.getSubgroups().computeIfAbsent(newSG, SubgroupModel::new);
-                sRetainedStructure.computeIfAbsent(this.formGroup, k -> new LinkedHashSet<>()).add(newSG);
+                SubgroupModel newSgModel = currentGm.getSubgroups().computeIfAbsent(newSG, SubgroupModel::new);
+                newSgModel.setDependsOnZ(currentGm.dependsOnZ());
+                if (currentGm.dependsOnZ()) {
+                    subgroupDependsOnZ.put(this.formGroup + " // " + newSG, true);
+                }
                 this.saveSessionState();
                 this.initGui();
             });
 
-            this.buttonSubgroupSelect = new ButtonGeneric(rx, rySubgroup, cycleBtnW, 18, StringUtils.translate("schematic_tiling.gui.editor.button.subgroup_label", this.formSubgroup));
+            this.buttonSubgroupSelect = new ButtonGeneric(rx, rySubgroup, cycleBtnW, 18, StringUtils.translate("schematic_tiling.gui.editor.button.subgroup_label", this.formSubgroup != null ? this.formSubgroup : "(None)"));
             this.buttonSubgroupSelect.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.cycle_subgroup"));
+            this.buttonSubgroupSelect.setEnabled(!sgNames.isEmpty());
             this.addButton(this.buttonSubgroupSelect, (btn, mBtn) -> {
+                if (sgNames.isEmpty()) return;
                 int idx = sgNames.indexOf(this.formSubgroup);
                 int next = (idx + 1) % sgNames.size();
                 this.formSubgroup = sgNames.get(next);
@@ -1513,6 +1673,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
         int ryActions = 206;
         ButtonGeneric saveBtn = new ButtonGeneric(rx, ryActions, 70, 20, StringUtils.translate("schematic_tiling.gui.editor.button.save"));
         saveBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.editor.hover.save_box"));
+        // Disable save if no subgroup is selected or subgroup doesn't exist in current group
+        boolean subgroupExists = gm != null && this.formSubgroup != null && gm.getSubgroups().containsKey(this.formSubgroup);
+        saveBtn.setEnabled(subgroupExists);
         this.addButton(saveBtn, (btn, mBtn) -> {
             this.applyTilingToCurrentBox();
         });
@@ -1812,9 +1975,21 @@ public class GuiSchematicTilingEditor extends GuiBase {
         String tileName = (this.inputNameField != null) ? this.inputNameField.getTextWrapper().trim() :
                 (this.formTileName != null ? this.formTileName : "Tile");
 
-        if (group.isEmpty()) group = "Main";
-        if (subgroup.isEmpty()) subgroup = "Sweepers";
+        if (group == null || group.isEmpty()) {
+            this.groups.put("Main", new GroupModel("Main"));
+            group = "Main";
+        }
+        if (subgroup != null && subgroup.isEmpty()) subgroup = null;
         if (tileName.isEmpty()) tileName = (this.formTileName != null && !this.formTileName.isEmpty()) ? this.formTileName : "Tile";
+
+        // Check if subgroup exists in the group - if not, return without saving
+        if (subgroup == null || subgroup.isEmpty()) {
+            return;
+        }
+        GroupModel gm = this.groups.get(group);
+        if (gm == null || !gm.getSubgroups().containsKey(subgroup)) {
+            return;
+        }
 
         if (this.currentRole == XDependence.CAP) {
             GroupModel targetGm = this.groups.get(group);
@@ -1850,7 +2025,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
         }
 
-        GroupModel gm = this.groups.computeIfAbsent(group, GroupModel::new);
         boolean subDependsOnZ = this.resolveSubgroupDependsOnZ(group, subgroup);
         this.currentDependsOnZ = subDependsOnZ;
 
@@ -1869,8 +2043,26 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.saved_box", generatedName));
 
         // Explicitly register group and subgroup in our model
-        gm.getSubgroups().computeIfAbsent(subgroup, SubgroupModel::new);
-        sRetainedStructure.computeIfAbsent(group, k -> new LinkedHashSet<>()).add(subgroup);
+        SubgroupModel sg = gm.getSubgroups().get(subgroup);
+        
+        // Remove from emptyStructure since it will now have a tile
+        Set<String> groupEmptySgs = emptyStructure.get(group);
+        if (groupEmptySgs != null) {
+            groupEmptySgs.remove(subgroup);
+        }
+
+        // Remove old box from model if it exists
+        for (GroupModel g : this.groups.values()) {
+            for (SubgroupModel s : g.getSubgroups().values()) {
+                s.getTiles().removeIf(tm -> tm.getAssignedBoxName().equals(this.editingBoxName));
+            }
+        }
+
+        // Add new tile to model
+        TileModel newTm = new TileModel(tileName, generatedName);
+        newTm.setXDep(this.currentRole);
+        newTm.setDependsOnZ(this.currentDependsOnZ);
+        sg.getTiles().add(newTm);
 
         this.formGroup = group;
         this.formSubgroup = subgroup;
@@ -1880,7 +2072,6 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.isCustomGroup = false;
         this.isCustomSubgroup = false;
 
-        this.parseSelectionBoxes();
         this.editingBoxName = null;
         sLastEditingBoxName = null;
         this.saveSessionState();
@@ -1892,9 +2083,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
         GroupModel gm = this.groups.computeIfAbsent(groupName, GroupModel::new);
         gm.setDependsOnZ(dependsOnZ);
-        sGroupDependsOnZ.put(groupName, dependsOnZ);
+        groupDependsOnZ.put(groupName, dependsOnZ);
         for (String sgName : gm.getSubgroups().keySet()) {
-            sSubgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
+            subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
         }
         if (groupName.equals(this.formGroup)) {
             this.currentDependsOnZ = dependsOnZ;
@@ -1918,8 +2109,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
         }
 
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes - we've already manually updated the model and selection
         this.saveSessionState();
+        this.initGui();
     }
 
     private void setSubgroupDependsOnZ(String groupName, String sgName, boolean dependsOnZ) {
@@ -1928,8 +2120,8 @@ public class GuiSchematicTilingEditor extends GuiBase {
         GroupModel gm = this.groups.computeIfAbsent(groupName, GroupModel::new);
         SubgroupModel sg = gm.getSubgroups().computeIfAbsent(sgName, SubgroupModel::new);
         sg.setDependsOnZ(dependsOnZ);
-        sSubgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
-        sGroupDependsOnZ.put(groupName, gm.dependsOnZ());
+        subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
+        groupDependsOnZ.put(groupName, gm.dependsOnZ());
 
         if (groupName.equals(this.formGroup) && sgName.equals(this.formSubgroup)) {
             this.currentDependsOnZ = dependsOnZ;
@@ -1953,7 +2145,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
         }
 
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes - we've already manually updated the model and selection
         this.saveSessionState();
     }
 
@@ -1982,32 +2174,34 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
         }
 
+        // Remove old group from map (if it exists)
         GroupModel gm = this.groups.remove(oldName);
-        if (gm != null) {
-            gm.setName(newName);
-            this.groups.put(newName, gm);
+        
+        // If group was empty (only tracked in emptyStructure), create it
+        if (gm == null) {
+            gm = new GroupModel(newName);
         } else {
-            this.groups.put(newName, new GroupModel(newName));
+            gm.setName(newName);
         }
+        this.groups.put(newName, gm);
 
-        Boolean z = sGroupDependsOnZ.remove(oldName);
+        Boolean z = groupDependsOnZ.remove(oldName);
         if (z != null) {
-            sGroupDependsOnZ.put(newName, z);
+            groupDependsOnZ.put(newName, z);
         }
         Map<String, Boolean> migratedSgZ = new LinkedHashMap<>();
-        for (Map.Entry<String, Boolean> entry : new ArrayList<>(sSubgroupDependsOnZ.entrySet())) {
+        for (Map.Entry<String, Boolean> entry : new ArrayList<>(subgroupDependsOnZ.entrySet())) {
             if (entry.getKey().startsWith(oldName + " // ")) {
-                sSubgroupDependsOnZ.remove(entry.getKey());
+                subgroupDependsOnZ.remove(entry.getKey());
                 migratedSgZ.put(newName + entry.getKey().substring(oldName.length()), entry.getValue());
             }
         }
-        sSubgroupDependsOnZ.putAll(migratedSgZ);
+        subgroupDependsOnZ.putAll(migratedSgZ);
 
-        Set<String> sgs = sRetainedStructure.remove(oldName);
-        if (sgs != null) {
-            sRetainedStructure.put(newName, sgs);
-        } else {
-            sRetainedStructure.put(newName, new LinkedHashSet<>());
+        // Update emptyStructure for empty groups
+        Set<String> emptySgs = emptyStructure.remove(oldName);
+        if (emptySgs != null) {
+            emptyStructure.put(newName, emptySgs);
         }
 
         if (oldName.equals(this.selectedGroupName)) {
@@ -2017,9 +2211,26 @@ public class GuiSchematicTilingEditor extends GuiBase {
             this.formGroup = newName;
         }
 
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes for empty groups - they're already in the model
+        // Only parse if the group has tiles in the selection
+        boolean hasTilesInSelection = false;
+        for (String boxName : this.selection.getAllSubRegionNames()) {
+            if (boxName.contains(TilingUnit.SEP)) {
+                String[] parts = boxName.split(TilingUnit.SEP);
+                if (parts.length >= 1 && parts[0].trim().equals(newName)) {
+                    hasTilesInSelection = true;
+                    break;
+                }
+            }
+        }
+        
+        if (hasTilesInSelection) {
+            this.parseSelectionBoxes();
+        }
+        
         this.saveSessionState();
         this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.renamed_group", newName));
+        this.initGui();
     }
 
     private void renameSubgroup(String groupName, String oldSG, String newSG) {
@@ -2066,63 +2277,86 @@ public class GuiSchematicTilingEditor extends GuiBase {
             sg.setName(newSG);
             gm.getSubgroups().put(newSG, sg);
         } else {
-            gm.getSubgroups().put(newSG, new SubgroupModel(newSG));
+            // Subgroup might be empty (no tiles), create it
+            sg = new SubgroupModel(newSG);
+            gm.getSubgroups().put(newSG, sg);
         }
 
-        Boolean sgZVal = sSubgroupDependsOnZ.remove(groupName + " // " + oldSG);
+        Boolean sgZVal = subgroupDependsOnZ.remove(groupName + " // " + oldSG);
         if (sgZVal != null) {
-            sSubgroupDependsOnZ.put(groupName + " // " + newSG, sgZVal);
+            subgroupDependsOnZ.put(groupName + " // " + newSG, sgZVal);
         }
 
-        Set<String> sgs = sRetainedStructure.get(groupName);
-        if (sgs != null) {
-            sgs.remove(oldSG);
-            sgs.add(newSG);
+        // Update emptyStructure for empty subgroups
+        Set<String> groupEmptySgs = emptyStructure.get(groupName);
+        if (groupEmptySgs != null && groupEmptySgs.contains(oldSG)) {
+            groupEmptySgs.remove(oldSG);
+            groupEmptySgs.add(newSG);
         }
 
         if (oldSG.equals(this.formSubgroup)) {
             this.formSubgroup = newSG;
         }
 
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes for empty subgroups - they're already in the model
+        // Only parse if the subgroup has tiles in the selection
+        boolean hasTilesInSelection = false;
+        for (String boxName : this.selection.getAllSubRegionNames()) {
+            if (boxName.contains(TilingUnit.SEP)) {
+                String[] parts = boxName.split(TilingUnit.SEP);
+                if (parts.length >= 2 && parts[0].trim().equals(groupName)) {
+                    String subgroupId = parts[1].trim();
+                    String sgName = null;
+                    if (subgroupId.contains("::")) {
+                        sgName = subgroupId.split("::", 2)[0].trim();
+                    }
+                    if (sgName != null && sgName.equals(newSG)) {
+                        hasTilesInSelection = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (hasTilesInSelection) {
+            this.parseSelectionBoxes();
+        }
+        
         this.saveSessionState();
         this.showNotification(StringUtils.translate("schematic_tiling.gui.editor.message.renamed_subgroup", newSG));
+        this.initGui();
     }
 
     private void deleteGroup(String gName) {
         GroupModel gm = this.groups.get(gName);
         if (gm != null) {
             for (SubgroupModel sg : gm.getSubgroups().values()) {
-                for (TileModel tm : sg.getTiles()) {
+                for (TileModel tm : new ArrayList<>(sg.getTiles())) {
                     this.selection.removeSubRegionBox(tm.getAssignedBoxName());
                     if (tm.getAssignedBoxName().equals(this.editingBoxName)) {
                         this.editingBoxName = null;
                     }
                 }
+                sg.getTiles().clear();
             }
+            gm.getSubgroups().clear();
         }
         this.groups.remove(gName);
-        sRetainedStructure.remove(gName);
-        sGroupDependsOnZ.remove(gName);
-        for (Map.Entry<String, Boolean> entry : new ArrayList<>(sSubgroupDependsOnZ.entrySet())) {
+        emptyStructure.remove(gName);
+        groupDependsOnZ.remove(gName);
+        for (Map.Entry<String, Boolean> entry : new ArrayList<>(subgroupDependsOnZ.entrySet())) {
             if (entry.getKey().startsWith(gName + " // ")) {
-                sSubgroupDependsOnZ.remove(entry.getKey());
+                subgroupDependsOnZ.remove(entry.getKey());
             }
         }
 
-        if (this.groups.isEmpty()) {
-            GroupModel defGroup = new GroupModel("Main");
-            defGroup.getSubgroups().put("Sweepers", new SubgroupModel("Sweepers"));
-            this.groups.put("Main", defGroup);
-            sRetainedStructure.computeIfAbsent("Main", k -> new LinkedHashSet<>()).add("Sweepers");
+        if (gName.equals(this.selectedGroupName)) {
+            this.selectedGroupName = this.groups.isEmpty() ? null : this.groups.keySet().iterator().next();
         }
-        if (this.selectedGroupName.equals(gName)) {
-            this.selectedGroupName = this.groups.keySet().iterator().next();
-        }
-        if (this.formGroup.equals(gName)) {
+        if (gName.equals(this.formGroup)) {
             this.formGroup = this.selectedGroupName;
         }
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes - we've already manually updated the model and selection
         this.saveSessionState();
         this.initGui();
     }
@@ -2133,31 +2367,33 @@ public class GuiSchematicTilingEditor extends GuiBase {
         if (gm != null) {
             SubgroupModel sg = gm.getSubgroups().get(sgName);
             if (sg != null) {
-                for (TileModel tm : sg.getTiles()) {
+                for (TileModel tm : new ArrayList<>(sg.getTiles())) {
                     this.selection.removeSubRegionBox(tm.getAssignedBoxName());
                     if (tm.getAssignedBoxName().equals(this.editingBoxName)) {
                         this.editingBoxName = null;
                     }
                 }
+                sg.getTiles().clear();
             }
             gm.getSubgroups().remove(sgName);
-            if (gm.getSubgroups().isEmpty()) {
-                gm.getSubgroups().put("Sweepers", new SubgroupModel("Sweepers"));
-                sRetainedStructure.computeIfAbsent(groupName, k -> new LinkedHashSet<>()).add("Sweepers");
-            }
         }
-        sSubgroupDependsOnZ.remove(groupName + " // " + sgName);
-        Set<String> sgs = sRetainedStructure.get(groupName);
-        if (sgs != null) {
-            sgs.remove(sgName);
+        subgroupDependsOnZ.remove(groupName + " // " + sgName);
+        // Remove from emptyStructure, but keep the group entry if it still has Z-dependence
+        Set<String> groupEmptySgs = emptyStructure.get(groupName);
+        if (groupEmptySgs != null) {
+            groupEmptySgs.remove(sgName);
+            // Don't remove the group from emptyStructure if it has Z-dependence
+            if (groupEmptySgs.isEmpty() && gm != null && !gm.dependsOnZ()) {
+                emptyStructure.remove(groupName);
+            }
         }
         if (sgName.equals(this.selectedSubgroupName)) {
             this.selectedSubgroupName = null;
         }
         if (sgName.equals(this.formSubgroup)) {
-            this.formSubgroup = (gm != null && !gm.getSubgroups().isEmpty()) ? gm.getSubgroups().keySet().iterator().next() : "Sweepers";
+            this.formSubgroup = (gm != null && !gm.getSubgroups().isEmpty()) ? gm.getSubgroups().keySet().iterator().next() : null;
         }
-        this.parseSelectionBoxes();
+        // Don't call parseSelectionBoxes - we've already manually updated the model and selection
         this.saveSessionState();
         this.initGui();
     }
@@ -2222,13 +2458,17 @@ public class GuiSchematicTilingEditor extends GuiBase {
         int rightX = 15 + leftW + 10;
 
         if (this.isFineTuning) {
-            this.drawRightPaneFineTuning(ctx, rightX);
+            this.drawRightPaneFineTuning(ctx, rightX, mouseX, mouseY);
         } else if (this.editingBoxName != null) {
             this.drawRightPaneBoxConfig(ctx, rightX);
         } else if (this.selectedSubgroupName != null) {
             this.drawRightPaneSubgroupSettings(ctx, rightX);
-        } else {
+        } else if (this.selectedGroupName != null) {
             this.drawRightPaneGroupSettings(ctx, rightX);
+        } else {
+            // No groups exist - show create group option
+            this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.title.no_groups"), rightX, 32, 0xFF55FF55);
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.message.create_group_first"), rightX, 46, 0xFFCCCCCC);
         }
 
         // --- FLOATING TOAST NOTIFICATION ---
@@ -2258,7 +2498,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         }
     }
 
-    private void drawRightPaneFineTuning(GuiContext ctx, int rightX) {
+    private void drawRightPaneFineTuning(GuiContext ctx, int rightX, int mouseX, int mouseY) {
         this.drawStringWithShadow(ctx, StringUtils.translate("schematic_tiling.gui.editor.title.fine_tune_origin"), rightX, 32, 0xFF55FF55);
 
         BlockPos explicit = this.selection.getExplicitOrigin();
@@ -2295,8 +2535,26 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.origin_shift", pDx, pDz), rightX, 162, COLOR_WHITE);
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.label.new_origin", previewOrig.getX(), previewOrig.getY(), previewOrig.getZ()), rightX, 174, 0xFF55FF55);
 
-        // Hover text for normalize origin Y checkbox
-        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.editor.hover.normalize_origin_y"), rightX, 206, 0xFFAAAAAA);
+        // Hover text for normalize origin Y checkbox - only show when hovering
+        if (this.checkboxNormalizeOriginY != null && this.checkboxNormalizeOriginY.isMouseOver(mouseX, mouseY)) {
+            String hoverText = StringUtils.translate("schematic_tiling.gui.editor.hover.normalize_origin_y");
+            int textWidth = this.getStringWidth(hoverText);
+            int tooltipX = mouseX + 12;
+            int tooltipY = mouseY + 16;
+            int tooltipWidth = textWidth + 16;
+            int tooltipHeight = 20;
+
+            // Ensure tooltip stays on screen
+            if (tooltipX + tooltipWidth > this.getScreenWidth()) {
+                tooltipX = mouseX - tooltipWidth - 12;
+            }
+            if (tooltipY + tooltipHeight > this.getScreenHeight()) {
+                tooltipY = mouseY - tooltipHeight - 12;
+            }
+
+            RenderUtils.drawOutlinedBox(ctx, tooltipX, tooltipY, tooltipWidth, tooltipHeight, 0xFF000000, 0xFFFFFFFF);
+            this.drawString(ctx, hoverText, tooltipX + 8, tooltipY + 6, 0xFFFFFFFF);
+        }
 
         if (this.statusMessage != null && this.statusIsError) {
             this.drawWrappedError(ctx, this.statusMessage, rightX, 238, this.getScreenWidth() - rightX - 20, this.getScreenHeight() - 36);
