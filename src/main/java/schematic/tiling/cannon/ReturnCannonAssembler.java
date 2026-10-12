@@ -13,7 +13,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
-import net.minecraft.world.level.block.RedStoneWireBlock;
+import net.minecraft.world.level.block.RedstoneWireBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -239,22 +239,7 @@ public class ReturnCannonAssembler {
      * Falls back to unwaxed Blocks.LIGHTNING_ROD on older versions (e.g. 1.21.1 through 1.21.8).
      */
     public static Block getWaxedLightningRodBlock() {
-        if (WAXED_LIGHTNING_ROD_BLOCK != null) {
-            return WAXED_LIGHTNING_ROD_BLOCK;
-        }
-        try {
-            for (Block b : BuiltInRegistries.BLOCK) {
-                if ("block.minecraft.waxed_lightning_rod".equals(b.getDescriptionId())) {
-                    WAXED_LIGHTNING_ROD_BLOCK = b;
-                    return b;
-                }
-            }
-            if (BuiltInRegistries.BLOCK.size() > 10) {
-                WAXED_LIGHTNING_ROD_BLOCK = Blocks.LIGHTNING_ROD;
-            }
-        } catch (Throwable ignored) {
-        }
-        return Blocks.LIGHTNING_ROD;
+        return Blocks.LIGHTNING_ROD.waxed().unaffected();
     }
 
     /**
@@ -262,11 +247,9 @@ public class ReturnCannonAssembler {
      * preserving all existing properties (facing, powered, waterlogged).
      */
     public static BlockState swapWaxedLightningRodIfNeeded(BlockState state) {
-        if (state.is(Blocks.LIGHTNING_ROD)) {
+        if (state.is(Blocks.LIGHTNING_ROD.weathering().unaffected())) {
             Block targetRod = getWaxedLightningRodBlock();
-            if (targetRod != Blocks.LIGHTNING_ROD) {
-                return targetRod.withPropertiesOf(state);
-            }
+            return targetRod.withPropertiesOf(state);
         }
         return state;
     }
@@ -313,7 +296,7 @@ public class ReturnCannonAssembler {
 
         if (rowsByX.isEmpty()) return;
 
-        BlockState redConcrete = Blocks.RED_CONCRETE.defaultBlockState();
+        BlockState redConcrete = Blocks.CONCRETE.red().defaultBlockState();
         int remainingToReplace = excessCount;
 
         // Iterate rows from max X down towards min X (closest to trigger/basket first)
@@ -439,15 +422,15 @@ public class ReturnCannonAssembler {
                     // Piston is to the side (wire doesn't directly point into piston):
                     // Swap dust into full block with leaves on top to power piston and avoid sticking to slime
                     BlockState supState = (i == 0)
-                            ? Blocks.GRAY_GLAZED_TERRACOTTA.defaultBlockState()
-                            : Blocks.BLACK_STAINED_GLASS.defaultBlockState();
+                            ? Blocks.GLAZED_TERRACOTTA.gray().defaultBlockState()
+                            : Blocks.STAINED_GLASS.black().defaultBlockState();
                     bridge.add(new BlockEntry(supPos, supState));
-                    bridge.add(new BlockEntry(wirePos, Blocks.GRAY_CONCRETE.defaultBlockState()));
+                    bridge.add(new BlockEntry(wirePos, Blocks.CONCRETE.gray().defaultBlockState()));
                     bridge.add(new BlockEntry(wirePos.above(), Blocks.AZALEA_LEAVES.defaultBlockState().setValue(BlockStateProperties.PERSISTENT, true)));
                 } else {
                     BlockState supState = (i == 0)
-                            ? Blocks.GRAY_GLAZED_TERRACOTTA.defaultBlockState()
-                            : Blocks.BLACK_STAINED_GLASS.defaultBlockState();
+                            ? Blocks.GLAZED_TERRACOTTA.gray().defaultBlockState()
+                            : Blocks.STAINED_GLASS.black().defaultBlockState();
 
                     bridge.add(new BlockEntry(supPos, supState));
 
@@ -464,12 +447,12 @@ public class ReturnCannonAssembler {
                     for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
                         BlockPos neighbor = wirePos.relative(dir);
                         if (connectedTargets.contains(neighbor)) {
-                            wireState = wireState.setValue(RedStoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.SIDE);
+                            wireState = wireState.setValue(RedstoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.SIDE);
                         } else {
-                            wireState = wireState.setValue(RedStoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.NONE);
+                            wireState = wireState.setValue(RedstoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.NONE);
                         }
                     }
-                    wireState = wireState.setValue(RedStoneWireBlock.POWER, Math.max(0, 15 - i));
+                    wireState = wireState.setValue(RedstoneWireBlock.POWER, Math.max(0, 15 - i));
 
                     bridge.add(new BlockEntry(wirePos, wireState));
                 }
@@ -829,7 +812,7 @@ public class ReturnCannonAssembler {
         BlockPos catcherSize = new BlockPos(1, 1, 1);
 
         NormalizedRegion catcherRegion = new NormalizedRegion(0, 0, 0, 1, 1, 1);
-        catcherRegion.getContainer().set(0, 0, 0, Blocks.RED_STAINED_GLASS.defaultBlockState());
+        catcherRegion.getContainer().set(0, 0, 0, Blocks.STAINED_GLASS.red().defaultBlockState());
 
         CompoundData catcherTag = new CompoundData();
         catcherTag.put("BlockStatePalette", catcherRegion.getContainer().getPalette().writeToData());
