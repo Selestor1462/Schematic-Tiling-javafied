@@ -17,6 +17,7 @@ import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.util.StringUtils;
 
+import schematic.tiling.client.gui.GuiReturnCannon;
 import schematic.tiling.client.gui.GuiSchematicTilingEditor;
 import schematic.tiling.core.TilingUnit;
 
@@ -36,29 +37,76 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
             return;
         }
 
-        // Only available in Normal selection mode
-        if (DataManager.getSelectionManager().getSelectionMode() != SelectionMode.NORMAL) {
-            return;
+        boolean hasTilingBtn = false;
+
+        // 1. Tiling Setup Button (Only in Normal selection mode for parts schematics)
+        if (DataManager.getSelectionManager().getSelectionMode() == SelectionMode.NORMAL
+                && this.schematicTiling_isPartsSelection()) {
+            String btnLabel = StringUtils.translate("schematic_tiling.gui.button.tiling_setup");
+            int btnWidth = Math.max(90, this.getStringWidth(btnLabel) + 14);
+            int btnHeight = 20;
+            int x = this.getScreenWidth() - btnWidth - 10;
+            int y = 24;
+
+            ButtonGeneric tilingBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
+            tilingBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.tiling_setup"));
+
+            this.addButton(tilingBtn, (btn, mouseBtn) -> {
+                GuiBase.openGui(new GuiSchematicTilingEditor(this.selection, this));
+            });
+            hasTilingBtn = true;
         }
 
-        // Only available if schematic / selection has "parts"
-        if (!this.schematicTiling_isPartsSelection()) {
-            return;
+        // 2. Return Cannon Button (In either selection mode when selection ends with "cannon")
+        if (this.schematicTiling_isCannonSelection()) {
+            String btnLabel = StringUtils.translate("schematic_tiling.gui.button.return_cannon");
+            int btnWidth = Math.max(95, this.getStringWidth(btnLabel) + 14);
+            int btnHeight = 20;
+            int x = this.getScreenWidth() - btnWidth - 10;
+            int y = hasTilingBtn ? 48 : 24;
+
+            ButtonGeneric cannonBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
+            cannonBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.return_cannon"));
+
+            this.addButton(cannonBtn, (btn, mouseBtn) -> {
+                GuiBase.openGui(new GuiReturnCannon(this.selection, this));
+            });
+        }
+    }
+
+    @Unique
+    private boolean schematicTiling_isCannonSelection() {
+        if (this.selection == null) {
+            return false;
         }
 
-        String btnLabel = StringUtils.translate("schematic_tiling.gui.button.tiling_setup");
-        int btnWidth = Math.max(90, this.getStringWidth(btnLabel) + 14);
-        int btnHeight = 20;
-        // Position at top-right corner to avoid colliding with manual origin controls and "Move origin to player" button
-        int x = this.getScreenWidth() - btnWidth - 10;
-        int y = 24;
+        // 1. Check selection name
+        String selName = this.selection.getName();
+        if (selName != null && selName.trim().toLowerCase().endsWith("cannon")) {
+            return true;
+        }
 
-        ButtonGeneric tilingBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
-        tilingBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.tiling_setup"));
+        // 2. Check selection ID
+        if (this.selectionId != null && this.selectionId.trim().toLowerCase().endsWith("cannon")) {
+            return true;
+        }
 
-        this.addButton(tilingBtn, (btn, mouseBtn) -> {
-            GuiBase.openGui(new GuiSchematicTilingEditor(this.selection, this));
-        });
+        // 3. Check currently selected schematic placement, if any
+        SchematicPlacement placement = DataManager.getSchematicPlacementManager().getSelectedSchematicPlacement();
+        if (placement != null) {
+            String pName = placement.getName();
+            if (pName != null && pName.trim().toLowerCase().endsWith("cannon")) {
+                return true;
+            }
+            if (placement.getSchematic() != null && placement.getSchematic().getMetadata() != null) {
+                String metaName = placement.getSchematic().getMetadata().getName();
+                if (metaName != null && metaName.trim().toLowerCase().endsWith("cannon")) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     @Unique

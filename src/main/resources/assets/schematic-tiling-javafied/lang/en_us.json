@@ -173,6 +173,7 @@
   "schematic_tiling.gui.editor.label.parent_group": "Parent Group: \"%s\"",
   "schematic_tiling.gui.editor.label.field_subgroup_name": "Subgroup Name:",
   "schematic_tiling.gui.editor.label.tiles_in_subgroup": "Tiles in Subgroup (%d):",
-  "schematic_tiling.gui.editor.label.no_tiles_in_subgroup": "  (No tiles in this subgroup yet)",
-  "schematic_tiling.gui.editor.label.inconsistencies": "Configuration Inconsistencies:"
+  "schematic_tiling.gui.editor.label.inconsistencies": "Configuration Inconsistencies:",
+  "schematic_tiling.gui.button.return_cannon": "Return Cannon",
+  "schematic_tiling.gui.button.hover.return_cannon": "Open the Return Cannon generator to solve TNT, simulate flight, and assemble schematic"
 }
