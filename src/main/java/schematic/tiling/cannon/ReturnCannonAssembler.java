@@ -904,6 +904,7 @@ public class ReturnCannonAssembler {
         meta.put("EnclosingSize", createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
 
         root.put("Metadata", meta);
+        root.put("Regions", regionsData);
         Path defaultPath = this.gameDirectory != null
                 ? this.gameDirectory.resolve("schematics").resolve(schematicName + ".litematic")
                 : Path.of(schematicName + ".litematic");
