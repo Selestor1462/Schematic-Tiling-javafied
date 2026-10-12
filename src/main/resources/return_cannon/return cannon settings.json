@@ -1,0 +1,62 @@
+{
+  "Version": "2.8",
+  "RedTNT": 0,
+  "BlueTNT": 0,
+  "TNTWeight": 0,
+  "SelectedCannon": "Default",
+  "Direction": "North",
+  "Destination": {
+    "X": 0,
+    "Z": 0
+  },
+  "CannonSettings": [
+    {
+      "CannonName": "Default",
+      "MaxTNT": 209,
+      "DefaultRedDirection": "SouthEast",
+      "DefaultBlueDirection": "NorthWest",
+      "NorthWestTNT": {
+        "X": -0.884999990463257,
+        "Y": 172.625,
+        "Z": -0.884999990463257
+      },
+      "NorthEastTNT": {
+        "X": 0.884999990463257,
+        "Y": 172.625,
+        "Z": -0.884999990463257
+      },
+      "SouthWestTNT": {
+        "X": -0.884999990463257,
+        "Y": 172.625,
+        "Z": 0.884999990463257
+      },
+      "SouthEastTNT": {
+        "X": 0.884999990463257,
+        "Y": 172.625,
+        "Z": 0.884999990463257
+      },
+      "Offset": {
+        "X": 0,
+        "Z": 0
+      },
+      "Pearl": {
+        "Motion": {
+          "X": 0,
+          "Y": 0.34301973395906404,
+          "Z": 0
+        },
+        "Position": {
+          "X": 0,
+          "Y": 172.47373832068837,
+          "Z": 0
+        }
+      },
+      "RedTNTConfiguration": [],
+      "BlueTNTConfiguration": [],
+      "PearlYMotionCancellation": false,
+      "PearlYPositionOriginal": 170.34722638929412,
+      "PearlYPositionAdjusted": 170,
+      "GameVersion": "Version1212Plus"
+    }
+  ]
+}
