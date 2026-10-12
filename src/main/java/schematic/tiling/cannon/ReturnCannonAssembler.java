@@ -13,7 +13,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
-import net.minecraft.world.level.block.RedstoneWireBlock;
+import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -447,12 +447,12 @@ public class ReturnCannonAssembler {
                     for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
                         BlockPos neighbor = wirePos.relative(dir);
                         if (connectedTargets.contains(neighbor)) {
-                            wireState = wireState.setValue(RedstoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.SIDE);
+                            wireState = wireState.setValue(RedStoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.SIDE);
                         } else {
-                            wireState = wireState.setValue(RedstoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.NONE);
+                            wireState = wireState.setValue(RedStoneWireBlock.PROPERTY_BY_DIRECTION.get(dir), RedstoneSide.NONE);
                         }
                     }
-                    wireState = wireState.setValue(RedstoneWireBlock.POWER, Math.max(0, 15 - i));
+                    wireState = wireState.setValue(RedStoneWireBlock.POWER, Math.max(0, 15 - i));
 
                     bridge.add(new BlockEntry(wirePos, wireState));
                 }
