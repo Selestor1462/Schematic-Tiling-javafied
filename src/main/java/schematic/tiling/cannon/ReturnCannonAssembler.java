@@ -871,9 +871,10 @@ public class ReturnCannonAssembler {
         meta.put("EnclosingSize", DataTypeUtils.createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
 
         root.put("Metadata", meta);
-        root.put("Regions", regionsData);
-
-        return new LitematicaSchematic(null, root, FileType.LITEMATICA_SCHEMATIC);
+        Path defaultPath = this.gameDirectory != null
+                ? this.gameDirectory.resolve("schematics").resolve(schematicName + ".litematic")
+                : Path.of(schematicName + ".litematic");
+        return new LitematicaSchematic(defaultPath, root, FileType.LITEMATICA_SCHEMATIC);
     }
 
     public GenerationResult assembleAndSaveCannon(
