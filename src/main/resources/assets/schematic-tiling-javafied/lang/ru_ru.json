@@ -173,7 +173,8 @@
   "schematic_tiling.gui.editor.label.parent_group": "Родительская группа: \"%s\"",
   "schematic_tiling.gui.editor.label.field_subgroup_name": "Имя подгруппы:",
   "schematic_tiling.gui.editor.label.tiles_in_subgroup": "Тайлов в подгруппе (%d):",
-  "schematic_tiling.gui.editor.label.no_tiles_in_subgroup": "  (В этой подгруппе пока нет тайлов)",
-  "schematic_tiling.gui.editor.label.inconsistencies": "Несоответствия конфигурации:"
+  "schematic_tiling.gui.editor.label.inconsistencies": "Несоответствия конфигурации:",
+  "schematic_tiling.gui.button.return_cannon": "Возвратная пушка",
+  "schematic_tiling.gui.button.hover.return_cannon": "Открыть генератор возвратной пушки: расчёт ТНТ, симуляция полёта и сборка схемы"
 }
 

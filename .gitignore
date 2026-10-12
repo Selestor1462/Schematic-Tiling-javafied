@@ -34,3 +34,5 @@ replay_*.log
 *.jfr
 all_jars/
 *.py
+scratch/
+/return_cannon/
