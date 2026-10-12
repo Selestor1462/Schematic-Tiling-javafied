@@ -181,6 +181,14 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private static String sLastTuneLength = "0";
     private static boolean sLastNormalizeOriginY = false;
 
+    // Persistent empty groups & subgroups across GUI reopens
+    private static final Map<String, Map<String, Set<String>>> sEmptyStructureBySelection = new LinkedHashMap<>();
+    private static final Map<String, Map<String, Boolean>> sGroupDependsOnZBySelection = new LinkedHashMap<>();
+    private static final Map<String, Map<String, Boolean>> sSubgroupDependsOnZBySelection = new LinkedHashMap<>();
+    private static final Map<AreaSelection, Map<String, Set<String>>> sEmptyStructureByRef = new java.util.WeakHashMap<>();
+    private static final Map<AreaSelection, Map<String, Boolean>> sGroupDependsOnZByRef = new java.util.WeakHashMap<>();
+    private static final Map<AreaSelection, Map<String, Boolean>> sSubgroupDependsOnZByRef = new java.util.WeakHashMap<>();
+
     private final AreaSelection selection;
     private final Map<String, GroupModel> groups = new LinkedHashMap<>();
     private final List<String> unassignedBoxes = new ArrayList<>();
@@ -189,6 +197,43 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private final Map<String, Set<String>> emptyStructure = new LinkedHashMap<>();
     private final Map<String, Boolean> groupDependsOnZ = new LinkedHashMap<>();
     private final Map<String, Boolean> subgroupDependsOnZ = new LinkedHashMap<>();
+
+    private String getSelectionKey() {
+        return (this.selection != null && this.selection.getName() != null) ? this.selection.getName() : "default";
+    }
+
+    private void loadSessionState() {
+        this.emptyStructure.clear();
+        this.groupDependsOnZ.clear();
+        this.subgroupDependsOnZ.clear();
+
+        Map<String, Set<String>> savedEmpty = null;
+        Map<String, Boolean> savedGroupZ = null;
+        Map<String, Boolean> savedSubgroupZ = null;
+
+        if (this.selection != null) {
+            savedEmpty = sEmptyStructureByRef.get(this.selection);
+            savedGroupZ = sGroupDependsOnZByRef.get(this.selection);
+            savedSubgroupZ = sSubgroupDependsOnZByRef.get(this.selection);
+        }
+
+        String key = this.getSelectionKey();
+        if (savedEmpty == null) savedEmpty = sEmptyStructureBySelection.get(key);
+        if (savedGroupZ == null) savedGroupZ = sGroupDependsOnZBySelection.get(key);
+        if (savedSubgroupZ == null) savedSubgroupZ = sSubgroupDependsOnZBySelection.get(key);
+
+        if (savedEmpty != null) {
+            for (Map.Entry<String, Set<String>> e : savedEmpty.entrySet()) {
+                this.emptyStructure.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+            }
+        }
+        if (savedGroupZ != null) {
+            this.groupDependsOnZ.putAll(savedGroupZ);
+        }
+        if (savedSubgroupZ != null) {
+            this.subgroupDependsOnZ.putAll(savedSubgroupZ);
+        }
+    }
 
     private String selectedGroupName = null;
     private String selectedSubgroupName = null;
@@ -269,6 +314,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.tuneLengthText = sLastTuneLength;
 
         this.lastKnownSubRegionNames = new LinkedHashSet<>(this.selection.getAllSubRegionNames());
+        this.loadSessionState();
         this.parseSelectionBoxes();
 
         // Default to last edited box if still valid, otherwise active selection box from Minecraft, otherwise first unassigned
@@ -287,15 +333,18 @@ public class GuiSchematicTilingEditor extends GuiBase {
     private void parseSelectionBoxes() {
         // Collect existing empty subgroups before clearing
         Map<String, Set<String>> existingEmpty = new LinkedHashMap<>();
+        // 1. Seed from emptyStructure so empty groups & subgroups are preserved across GUI reopens
+        for (Map.Entry<String, Set<String>> entry : this.emptyStructure.entrySet()) {
+            existingEmpty.computeIfAbsent(entry.getKey(), k -> new LinkedHashSet<>()).addAll(entry.getValue());
+        }
+        // 2. Also track any groups/subgroups currently in this.groups that are empty
         for (Map.Entry<String, GroupModel> gEntry : this.groups.entrySet()) {
-            Set<String> emptySgs = new LinkedHashSet<>();
+            Set<String> emptySgs = existingEmpty.computeIfAbsent(gEntry.getKey(), k -> new LinkedHashSet<>());
             for (SubgroupModel sg : gEntry.getValue().getSubgroups().values()) {
                 if (sg.getTiles().isEmpty()) {
                     emptySgs.add(sg.getName());
                 }
             }
-            // Track all groups - even empty ones - to preserve them across GUI sessions
-            existingEmpty.put(gEntry.getKey(), emptySgs);
         }
 
         this.groups.clear();
@@ -342,18 +391,20 @@ public class GuiSchematicTilingEditor extends GuiBase {
         for (Map.Entry<String, Set<String>> entry : existingEmpty.entrySet()) {
             GroupModel gm = this.groups.computeIfAbsent(entry.getKey(), GroupModel::new);
             // Restore group Z-dependence
-            if (groupDependsOnZ.containsKey(entry.getKey())) {
-                gm.setDependsOnZ(groupDependsOnZ.get(entry.getKey()));
+            if (this.groupDependsOnZ.containsKey(entry.getKey())) {
+                gm.setDependsOnZ(this.groupDependsOnZ.get(entry.getKey()));
             }
             // Add to emptyStructure to preserve group even if it has no subgroups
-            emptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+            this.emptyStructure.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
             // Restore empty subgroups
             for (String sgName : entry.getValue()) {
                 if (!gm.getSubgroups().containsKey(sgName)) {
                     SubgroupModel sg = new SubgroupModel(sgName);
                     String sgKey = gm.getName() + " // " + sgName;
-                    if (subgroupDependsOnZ.containsKey(sgKey)) {
-                        sg.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
+                    if (this.subgroupDependsOnZ.containsKey(sgKey)) {
+                        sg.setDependsOnZ(this.subgroupDependsOnZ.get(sgKey));
+                    } else if (gm.dependsOnZ()) {
+                        sg.setDependsOnZ(true);
                     }
                     gm.getSubgroups().put(sgName, sg);
                 }
@@ -364,22 +415,45 @@ public class GuiSchematicTilingEditor extends GuiBase {
             for (SubgroupModel sgm : gm.getSubgroups().values()) {
                 String sgKey = gm.getName() + " // " + sgm.getName();
                 if (sgm.getTiles().isEmpty()) {
-                    if (subgroupDependsOnZ.containsKey(sgKey)) {
-                        sgm.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
+                    if (this.subgroupDependsOnZ.containsKey(sgKey)) {
+                        sgm.setDependsOnZ(this.subgroupDependsOnZ.get(sgKey));
+                    } else if (gm.dependsOnZ()) {
+                        sgm.setDependsOnZ(true);
+                        this.subgroupDependsOnZ.put(sgKey, true);
                     }
                 } else if (!this.hasMixedZDependence(sgm.getTiles())) {
                     boolean allZ = sgm.getTiles().get(0).dependsOnZ();
                     sgm.setDependsOnZ(allZ);
-                    subgroupDependsOnZ.put(sgKey, allZ);
-                } else if (subgroupDependsOnZ.containsKey(sgKey)) {
-                    sgm.setDependsOnZ(subgroupDependsOnZ.get(sgKey));
+                    this.subgroupDependsOnZ.put(sgKey, allZ);
+                } else if (this.subgroupDependsOnZ.containsKey(sgKey)) {
+                    sgm.setDependsOnZ(this.subgroupDependsOnZ.get(sgKey));
                 } else {
                     sgm.setDependsOnZ(false);
-                    subgroupDependsOnZ.put(sgKey, false);
+                    this.subgroupDependsOnZ.put(sgKey, false);
                 }
                 sgm.sortTiles();
             }
-            groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
+
+            // Group-level Z-dependence reconciliation
+            if (!gm.getSubgroups().isEmpty()) {
+                boolean allSgZ = true;
+                for (SubgroupModel sgm : gm.getSubgroups().values()) {
+                    if (!sgm.dependsOnZ()) {
+                        allSgZ = false;
+                        break;
+                    }
+                }
+                if (allSgZ) {
+                    gm.setDependsOnZ(true);
+                } else if (this.groupDependsOnZ.containsKey(gm.getName())) {
+                    gm.setDependsOnZ(this.groupDependsOnZ.get(gm.getName()));
+                } else {
+                    gm.setDependsOnZ(false);
+                }
+            } else if (this.groupDependsOnZ.containsKey(gm.getName())) {
+                gm.setDependsOnZ(this.groupDependsOnZ.get(gm.getName()));
+            }
+            this.groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
         }
 
         if (this.selectedGroupName == null || !this.groups.containsKey(this.selectedGroupName)) {
@@ -422,7 +496,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             return false;
         }
         // First check the subgroupDependsOnZ map (for empty subgroups)
-        Boolean zVal = subgroupDependsOnZ.get(groupName + " // " + sgName);
+        Boolean zVal = this.subgroupDependsOnZ.get(groupName + " // " + sgName);
         if (zVal != null) {
             return zVal;
         }
@@ -431,6 +505,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
         SubgroupModel sgm = (gm != null) ? gm.getSubgroups().get(sgName) : null;
         if (sgm != null) {
             return sgm.dependsOnZ();
+        }
+        if (gm != null && gm.dependsOnZ()) {
+            return true;
         }
         return false;
     }
@@ -709,23 +786,47 @@ public class GuiSchematicTilingEditor extends GuiBase {
         sLastLengthIsBigger = this.lengthIsBigger;
         sLastTuneWidth = this.tuneWidthText;
         sLastTuneLength = this.tuneLengthText;
+
         for (GroupModel gm : this.groups.values()) {
-            groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
+            Set<String> emptySgs = this.emptyStructure.computeIfAbsent(gm.getName(), k -> new LinkedHashSet<>());
             for (SubgroupModel sgm : gm.getSubgroups().values()) {
-                subgroupDependsOnZ.put(gm.getName() + " // " + sgm.getName(), sgm.dependsOnZ());
+                if (sgm.getTiles().isEmpty()) {
+                    emptySgs.add(sgm.getName());
+                } else {
+                    emptySgs.remove(sgm.getName());
+                }
+                this.subgroupDependsOnZ.put(gm.getName() + " // " + sgm.getName(), sgm.dependsOnZ());
             }
+            this.groupDependsOnZ.put(gm.getName(), gm.dependsOnZ());
+        }
+
+        String key = this.getSelectionKey();
+        Map<String, Set<String>> copyEmpty = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> e : this.emptyStructure.entrySet()) {
+            copyEmpty.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+        }
+        sEmptyStructureBySelection.put(key, copyEmpty);
+        sGroupDependsOnZBySelection.put(key, new LinkedHashMap<>(this.groupDependsOnZ));
+        sSubgroupDependsOnZBySelection.put(key, new LinkedHashMap<>(this.subgroupDependsOnZ));
+
+        if (this.selection != null) {
+            sEmptyStructureByRef.put(this.selection, copyEmpty);
+            sGroupDependsOnZByRef.put(this.selection, new LinkedHashMap<>(this.groupDependsOnZ));
+            sSubgroupDependsOnZByRef.put(this.selection, new LinkedHashMap<>(this.subgroupDependsOnZ));
         }
     }
 
     @Override
     protected void closeGui(boolean showParent) {
         this.commitOpenInputs();
+        this.saveSessionState();
         super.closeGui(showParent);
     }
 
     @Override
     public void removed() {
         this.commitOpenInputs();
+        this.saveSessionState();
         super.removed();
     }
 
@@ -826,6 +927,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.addButton(addGBtn, (btn, mBtn) -> {
             String newGName = "Group_" + (this.groups.size() + 1);
             this.groups.put(newGName, new GroupModel(newGName));
+            this.emptyStructure.computeIfAbsent(newGName, k -> new LinkedHashSet<>());
             this.selectedGroupName = newGName;
             this.selectedSubgroupName = null;
             this.editingBoxName = null;
@@ -1240,18 +1342,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         );
         this.checkboxDependsOnZ.setChecked(gz, false);
         this.checkboxDependsOnZ.setListener(cb -> {
-            gm.setDependsOnZ(cb.isChecked());
-            groupDependsOnZ.put(this.selectedGroupName, cb.isChecked());
-            // Update existing subgroups' Z-dependence
-            for (String sgName : gm.getSubgroups().keySet()) {
-                subgroupDependsOnZ.put(this.selectedGroupName + " // " + sgName, cb.isChecked());
-                SubgroupModel sg = gm.getSubgroups().get(sgName);
-                if (sg != null) {
-                    sg.setDependsOnZ(cb.isChecked());
-                }
-            }
-            this.saveSessionState();
-            this.initGui();
+            this.setGroupDependsOnZ(this.selectedGroupName, cb.isChecked());
         });
         this.addWidget(this.checkboxDependsOnZ);
 
@@ -1447,6 +1538,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 String newG = this.inputCustomGroup.getTextWrapper().trim();
                 if (!newG.isEmpty()) {
                     this.groups.computeIfAbsent(newG, GroupModel::new);
+                    this.emptyStructure.computeIfAbsent(newG, k -> new LinkedHashSet<>());
                     this.formGroup = newG;
                     this.selectedGroupName = newG;
                     // Reset subgroup when creating/selecting new group
@@ -1493,6 +1585,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 this.isCustomGroup = true;
                 String newG = "Group_" + (this.groups.size() + 1);
                 this.groups.computeIfAbsent(newG, GroupModel::new);
+                this.emptyStructure.computeIfAbsent(newG, k -> new LinkedHashSet<>());
                 this.formGroup = newG;
                 this.selectedGroupName = newG;
                 this.saveSessionState();
@@ -2063,6 +2156,18 @@ public class GuiSchematicTilingEditor extends GuiBase {
         newTm.setXDep(this.currentRole);
         newTm.setDependsOnZ(this.currentDependsOnZ);
         sg.getTiles().add(newTm);
+        sg.setDependsOnZ(this.currentDependsOnZ);
+        this.subgroupDependsOnZ.put(group + " // " + subgroup, this.currentDependsOnZ);
+
+        boolean allZ = !gm.getSubgroups().isEmpty();
+        for (SubgroupModel s : gm.getSubgroups().values()) {
+            if (!s.dependsOnZ()) {
+                allZ = false;
+                break;
+            }
+        }
+        gm.setDependsOnZ(allZ);
+        this.groupDependsOnZ.put(group, allZ);
 
         this.formGroup = group;
         this.formSubgroup = subgroup;
@@ -2083,9 +2188,15 @@ public class GuiSchematicTilingEditor extends GuiBase {
 
         GroupModel gm = this.groups.computeIfAbsent(groupName, GroupModel::new);
         gm.setDependsOnZ(dependsOnZ);
-        groupDependsOnZ.put(groupName, dependsOnZ);
+        this.groupDependsOnZ.put(groupName, dependsOnZ);
         for (String sgName : gm.getSubgroups().keySet()) {
-            subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
+            this.subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
+        }
+        for (SubgroupModel sg : gm.getSubgroups().values()) {
+            sg.setDependsOnZ(dependsOnZ);
+            for (TileModel tm : sg.getTiles()) {
+                tm.setDependsOnZ(dependsOnZ);
+            }
         }
         if (groupName.equals(this.formGroup)) {
             this.currentDependsOnZ = dependsOnZ;
@@ -2120,8 +2231,20 @@ public class GuiSchematicTilingEditor extends GuiBase {
         GroupModel gm = this.groups.computeIfAbsent(groupName, GroupModel::new);
         SubgroupModel sg = gm.getSubgroups().computeIfAbsent(sgName, SubgroupModel::new);
         sg.setDependsOnZ(dependsOnZ);
-        subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
-        groupDependsOnZ.put(groupName, gm.dependsOnZ());
+        for (TileModel tm : sg.getTiles()) {
+            tm.setDependsOnZ(dependsOnZ);
+        }
+        this.subgroupDependsOnZ.put(groupName + " // " + sgName, dependsOnZ);
+
+        boolean allZ = !gm.getSubgroups().isEmpty();
+        for (SubgroupModel s : gm.getSubgroups().values()) {
+            if (!s.dependsOnZ()) {
+                allZ = false;
+                break;
+            }
+        }
+        gm.setDependsOnZ(allZ);
+        this.groupDependsOnZ.put(groupName, allZ);
 
         if (groupName.equals(this.formGroup) && sgName.equals(this.formSubgroup)) {
             this.currentDependsOnZ = dependsOnZ;
@@ -2377,15 +2500,11 @@ public class GuiSchematicTilingEditor extends GuiBase {
             }
             gm.getSubgroups().remove(sgName);
         }
-        subgroupDependsOnZ.remove(groupName + " // " + sgName);
-        // Remove from emptyStructure, but keep the group entry if it still has Z-dependence
-        Set<String> groupEmptySgs = emptyStructure.get(groupName);
+        this.subgroupDependsOnZ.remove(groupName + " // " + sgName);
+        // Remove from emptyStructure
+        Set<String> groupEmptySgs = this.emptyStructure.get(groupName);
         if (groupEmptySgs != null) {
             groupEmptySgs.remove(sgName);
-            // Don't remove the group from emptyStructure if it has Z-dependence
-            if (groupEmptySgs.isEmpty() && gm != null && !gm.dependsOnZ()) {
-                emptyStructure.remove(groupName);
-            }
         }
         if (sgName.equals(this.selectedSubgroupName)) {
             this.selectedSubgroupName = null;
