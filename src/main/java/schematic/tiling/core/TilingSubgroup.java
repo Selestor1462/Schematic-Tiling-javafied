@@ -124,13 +124,17 @@ public class TilingSubgroup {
         if (!tiles.isEmpty()) {
             tMinX = tiles.stream().mapToInt(TilingUnit::minX).min().getAsInt();
             int[] widths = tiles.stream().mapToInt(TilingUnit::getWidth).toArray();
-            int[] sol = KnapsackSolver.solve(widths, width - capW - tMinX, true);
+            int[] sol = KnapsackSolver.solve(widths, width - capW - tMinX, cap != null);
             this.knapsackCache = sol;
-            int sumTiles = 0;
-            for (int i = 0; i < widths.length; i++) {
-                sumTiles += sol[i] * widths[i];
+            if (cap == null) {
+                tMaxX = width;
+            } else {
+                int sumTiles = 0;
+                for (int i = 0; i < widths.length; i++) {
+                    sumTiles += sol[i] * widths[i];
+                }
+                tMaxX = tMinX + sumTiles + capW;
             }
-            tMaxX = tMinX + sumTiles + capW;
         } else {
             tMinX = Integer.MAX_VALUE;
             tMaxX = Integer.MIN_VALUE;
