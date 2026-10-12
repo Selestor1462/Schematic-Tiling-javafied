@@ -4,5 +4,5 @@ The Return Cannon Generator allows players to calculate TNT requirements and ass
 
 This release also updates the core tiling algorithm with upstream changes from EQUENOS-2 that optimize knapsack solving for uncapped groups, and fixes editor issues where empty groups and subgroups were removed on menu close, group Z-dependence was not saved between menu reopens, and the normalize origin Y level checkbox state was lost.
 
-Credits go to EQUENOS-2 for the original Schematic-Tiling design and algorithm, Pearl Calculator for trajectory simulation math, and garlic bread for designing the pearl cannon as showcased in the Return Cannon Tutorial (How to make your own return pearl cannons) on YouTube at https://www.youtube.com/watch?v=MkEJpBAtin8.
+Credits go to EQUENOS-2 for the original Schematic-Tiling design and algorithm, whats2000 for [PearlCalculatorBlazor](https://github.com/whats2000/PearlCalculatorBlazor) trajectory simulation math, and garlic bread for designing the pearl cannon as showcased in the Return Cannon Tutorial (How to make your own return pearl cannons) on YouTube at https://www.youtube.com/watch?v=MkEJpBAtin8.
 
