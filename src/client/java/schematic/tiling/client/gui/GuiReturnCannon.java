@@ -1,5 +1,6 @@
 package schematic.tiling.client.gui;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -131,8 +132,8 @@ public class GuiReturnCannon extends GuiBase {
             lastSZ = null;
         }
 
-        Path gameDir = DataManager.getSchematicsBaseDirectory().getParent();
-        if (gameDir == null) gameDir = Path.of(".");
+        File baseDir = DataManager.getSchematicsBaseDirectory();
+        Path gameDir = (baseDir != null && baseDir.getParentFile() != null) ? baseDir.getParentFile().toPath() : Path.of(".");
         this.settings = PearlCalculator.loadSettings(gameDir);
 
         // Restore static state
@@ -458,7 +459,6 @@ public class GuiReturnCannon extends GuiBase {
         this.schematicNameField = new GuiTextFieldGeneric(resultsX, startY + 236, resultsW, 18, this.font);
         this.schematicNameField.setMaxLengthWrapper(128);
         this.schematicNameField.setTextWrapper(curSchemName);
-        this.schematicNameField.setHoverTooltip("§eSchematic Name", "§7Name of the generated schematic and subregion metadata");
         this.addTextField(this.schematicNameField, null);
 
         // --- Bottom Area: Checkboxes & Actions ---
@@ -584,8 +584,8 @@ public class GuiReturnCannon extends GuiBase {
             BlockPos cannonStart = new BlockPos(sx, sy, sz);
             BlockPos placementOrigin = ReturnCannonAssembler.getSchematicOrigin(sx, sz, this.alignerFacing.getAlignerRotation(), this.mirrorMode);
 
-            Path gameDir = DataManager.getSchematicsBaseDirectory().getParent();
-            if (gameDir == null) gameDir = Path.of(".");
+            File baseDir = DataManager.getSchematicsBaseDirectory();
+            Path gameDir = (baseDir != null && baseDir.getParentFile() != null) ? baseDir.getParentFile().toPath() : Path.of(".");
 
             ReturnCannonAssembler assembler = new ReturnCannonAssembler(gameDir);
 
@@ -627,14 +627,14 @@ public class GuiReturnCannon extends GuiBase {
     @Override
     protected void drawScreenBackground(GuiGraphics ctx, int mouseX, int mouseY) {
         super.drawScreenBackground(ctx, mouseX, mouseY);
-        RenderUtils.drawRect(ctx, 0, 0, this.getScreenWidth(), this.getScreenHeight(), 0x80000000);
+        RenderUtils.drawRect(0, 0, this.getScreenWidth(), this.getScreenHeight(), 0x80000000);
 
         int dialogWidth = DIALOG_WIDTH;
         int dialogHeight = DIALOG_HEIGHT;
         int startX = (this.getScreenWidth() - dialogWidth) / 2;
         int startY = (this.getScreenHeight() - dialogHeight) / 2;
 
-        RenderUtils.drawOutlinedBox(ctx, startX, startY, dialogWidth, dialogHeight, 0xFF1C1C1C, COLOR_HORIZONTAL_BAR);
+        RenderUtils.drawOutlinedBox(startX, startY, dialogWidth, dialogHeight, 0xFF1C1C1C, COLOR_HORIZONTAL_BAR);
     }
 
     @Override
@@ -670,7 +670,7 @@ public class GuiReturnCannon extends GuiBase {
             int boxY = y;
             int boxW = 206;
             int boxH = 76;
-            RenderUtils.drawOutlinedBox(ctx, col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
+            RenderUtils.drawOutlinedBox(col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
 
             this.drawString(ctx, String.format(Locale.ROOT, "§e§lLanding (Tick %d): §a[%.2fm]", sel.tick, sel.distance),
                     col1X + 6, boxY + 5, 0xFFFFFF55);
@@ -748,7 +748,7 @@ public class GuiReturnCannon extends GuiBase {
                     if (!this.processedPostSave && this.schematic != null && !this.schematic.getMetadata().wasModifiedSinceSaved()) {
                         this.processedPostSave = true;
 
-                        Path dir = this.getListWidget().getCurrentDirectory();
+                        File dir = this.getListWidget().getCurrentDirectory();
                         String text = this.getTextFieldText();
                         String fileName = FileNameUtils.generateSimpleUnicodeSafeFileName(text);
                         if (FileNameUtils.doesFileNameContainIllegalCharacters(fileName)) {
@@ -757,15 +757,15 @@ public class GuiReturnCannon extends GuiBase {
                         if (!fileName.endsWith(".litematic")) {
                             fileName = fileName + ".litematic";
                         }
-                        Path savedFile = (dir != null) ? dir.resolve(fileName).normalize() : null;
+                        File savedFile = (dir != null) ? new File(dir, fileName) : null;
 
                         LitematicaSchematic targetSchem = null;
-                        if (savedFile != null && Files.isRegularFile(savedFile)) {
+                        if (savedFile != null && savedFile.isFile()) {
                             if (this.loadToMemory) {
                                 targetSchem = SchematicHolder.getInstance().getOrLoad(savedFile);
                             } else {
                                 FileType fileType = FileType.fromFile(savedFile);
-                                targetSchem = LitematicaSchematic.createFromFile(savedFile.getParent(), savedFile.getFileName().toString(), fileType);
+                                targetSchem = LitematicaSchematic.createFromFile(savedFile.getParentFile(), savedFile.getName(), fileType);
                             }
                         }
 
@@ -778,7 +778,7 @@ public class GuiReturnCannon extends GuiBase {
 
                         if (this.createPlacement) {
                             String name = targetSchem.getFile() != null ?
-                                    FileNameUtils.getFileNameWithoutExtension(targetSchem.getFile().getFileName().toString()) :
+                                    FileNameUtils.getFileNameWithoutExtension(targetSchem.getFile().getName()) :
                                     this.placementName;
                             SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
                             SchematicPlacement placement = SchematicPlacement.createFor(targetSchem, this.placementOrigin, name, true, true);

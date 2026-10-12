@@ -77,7 +77,7 @@ public class ReturnCannonAssembler {
                 if (schem != null) {
                     return schem;
                 }
-                return LitematicaSchematic.createFromFile(p.getParent(), p.getFileName().toString());
+                return LitematicaSchematic.createFromFile(p.getParent().toFile(), p.getFileName().toString());
             }
         }
 
@@ -95,7 +95,7 @@ public class ReturnCannonAssembler {
             if (schem != null) {
                 return schem;
             }
-            return LitematicaSchematic.createFromFile(tempFile.getParent(), tempFile.getFileName().toString());
+            return LitematicaSchematic.createFromFile(tempFile.getParent().toFile(), tempFile.getFileName().toString());
         }
 
         throw new IllegalStateException("Could not find component schematic: " + relativePath);
@@ -944,7 +944,7 @@ public class ReturnCannonAssembler {
         LitematicaSchematic schematic = assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos);
         String safeName = FileNameUtils.generateSafeFileName(schematicName);
         Files.createDirectories(outputDirectory);
-        schematic.writeToFile(outputDirectory, safeName, false);
+        schematic.writeToFile(outputDirectory.toFile(), safeName, false);
         Path outputFile = outputDirectory.resolve(safeName + ".litematic");
         return new GenerationResult(schematic, outputFile);
     }
