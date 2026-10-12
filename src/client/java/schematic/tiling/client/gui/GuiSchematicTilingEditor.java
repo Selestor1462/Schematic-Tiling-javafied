@@ -312,6 +312,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.lengthIsBigger = sLastLengthIsBigger;
         this.tuneWidthText = sLastTuneWidth;
         this.tuneLengthText = sLastTuneLength;
+        this.normalizeOriginY = sLastNormalizeOriginY;
 
         this.lastKnownSubRegionNames = new LinkedHashSet<>(this.selection.getAllSubRegionNames());
         this.loadSessionState();
@@ -732,6 +733,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
     }
 
     private void commitOpenInputs() {
+        if (this.checkboxNormalizeOriginY != null) {
+            this.normalizeOriginY = this.checkboxNormalizeOriginY.isChecked();
+        }
         if (this.inputTuneWidth != null) this.tuneWidthText = this.inputTuneWidth.getTextWrapper().trim();
         if (this.inputTuneLength != null) this.tuneLengthText = this.inputTuneLength.getTextWrapper().trim();
         if (this.inputNameField != null) {
@@ -786,6 +790,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         sLastLengthIsBigger = this.lengthIsBigger;
         sLastTuneWidth = this.tuneWidthText;
         sLastTuneLength = this.tuneLengthText;
+        sLastNormalizeOriginY = this.normalizeOriginY;
 
         for (GroupModel gm : this.groups.values()) {
             Set<String> emptySgs = this.emptyStructure.computeIfAbsent(gm.getName(), k -> new LinkedHashSet<>());
@@ -1823,6 +1828,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
         this.checkboxNormalizeOriginY.setChecked(this.normalizeOriginY, false);
         this.checkboxNormalizeOriginY.setListener(cb -> {
             this.normalizeOriginY = cb.isChecked();
+            this.saveSessionState();
         });
         this.addWidget(this.checkboxNormalizeOriginY);
 
