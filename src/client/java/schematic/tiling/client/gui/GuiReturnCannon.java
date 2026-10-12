@@ -27,7 +27,7 @@ import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
 import fi.dy.masa.malilib.gui.widgets.WidgetCheckBox;
 import fi.dy.masa.malilib.gui.Message.MessageType;
-import fi.dy.masa.malilib.render.GuiContext;
+import net.minecraft.client.gui.GuiGraphics;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.FileNameUtils;
 import fi.dy.masa.malilib.util.InfoUtils;
@@ -625,7 +625,7 @@ public class GuiReturnCannon extends GuiBase {
     }
 
     @Override
-    protected void drawScreenBackground(GuiContext ctx, int mouseX, int mouseY) {
+    protected void drawScreenBackground(GuiGraphics ctx, int mouseX, int mouseY) {
         super.drawScreenBackground(ctx, mouseX, mouseY);
         RenderUtils.drawRect(ctx, 0, 0, this.getScreenWidth(), this.getScreenHeight(), 0x80000000);
 
@@ -638,7 +638,7 @@ public class GuiReturnCannon extends GuiBase {
     }
 
     @Override
-    protected void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks) {
+    protected void drawContents(GuiGraphics ctx, int mouseX, int mouseY, float partialTicks) {
         int dialogWidth = DIALOG_WIDTH;
         int dialogHeight = DIALOG_HEIGHT;
         int startX = (this.getScreenWidth() - dialogWidth) / 2;

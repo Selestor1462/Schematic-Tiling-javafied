@@ -24,11 +24,11 @@ import fi.dy.masa.litematica.schematic.LitematicaSchematic;
 import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.util.FileType;
 import fi.dy.masa.malilib.util.FileNameUtils;
-import fi.dy.masa.malilib.util.data.tag.CompoundData;
-import fi.dy.masa.malilib.util.data.tag.ListData;
-import fi.dy.masa.malilib.util.data.tag.LongArrayData;
-import fi.dy.masa.malilib.util.data.tag.util.DataFileUtils;
-import fi.dy.masa.malilib.util.data.tag.util.DataTypeUtils;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.LongArrayTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 
 import schematic.tiling.cannon.PearlCalculator.CalculationResult;
 import schematic.tiling.core.NormalizedRegion;
@@ -37,6 +37,22 @@ import schematic.tiling.core.SchematicTilerUtil.GenerationResult;
 public class ReturnCannonAssembler {
 
     private final Path gameDirectory;
+
+    public static CompoundTag createBlockPosTag(BlockPos pos) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("x", pos.getX());
+        tag.putInt("y", pos.getY());
+        tag.putInt("z", pos.getZ());
+        return tag;
+    }
+
+    public static CompoundTag createVec3iTag(Vec3i vec) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("x", vec.getX());
+        tag.putInt("y", vec.getY());
+        tag.putInt("z", vec.getZ());
+        return tag;
+    }
 
     public ReturnCannonAssembler(Path gameDirectory) {
         this.gameDirectory = gameDirectory;
@@ -87,7 +103,7 @@ public class ReturnCannonAssembler {
 
     private LitematicaSchematic loadSchematicSilently(Path path) {
         try {
-            CompoundData data = DataFileUtils.readCompoundDataFromNbtFile(path);
+            CompoundTag data = NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
             if (data != null) {
                 data.putInt("MinecraftDataVersion", LitematicaSchematic.MINECRAFT_DATA_VERSION);
                 return new LitematicaSchematic(path, data, FileType.LITEMATICA_SCHEMATIC);
@@ -139,9 +155,9 @@ public class ReturnCannonAssembler {
 
     public static class TileEntityEntry {
         public BlockPos pos;
-        public CompoundData nbt;
+        public CompoundTag nbt;
 
-        public TileEntityEntry(BlockPos pos, CompoundData nbt) {
+        public TileEntityEntry(BlockPos pos, CompoundTag nbt) {
             this.pos = pos;
             this.nbt = nbt;
         }
@@ -150,9 +166,9 @@ public class ReturnCannonAssembler {
     public List<TileEntityEntry> extractTileEntities(LitematicaSchematic schematic) {
         List<TileEntityEntry> result = new ArrayList<>();
         for (String regionName : schematic.getAreas().keySet()) {
-            Map<BlockPos, CompoundData> teMap = schematic.getBlockEntityMapForRegion(regionName);
+            Map<BlockPos, CompoundTag> teMap = schematic.getBlockEntityMapForRegion(regionName);
             if (teMap != null) {
-                for (Map.Entry<BlockPos, CompoundData> e : teMap.entrySet()) {
+                for (Map.Entry<BlockPos, CompoundTag> e : teMap.entrySet()) {
                     result.add(new TileEntityEntry(e.getKey(), e.getValue().copy()));
                 }
             }
@@ -764,18 +780,18 @@ public class ReturnCannonAssembler {
         }
 
         // Combine and copy all tile entities into mainRegion (with relative coordinates rx, ry, rz)
-        Map<BlockPos, CompoundData> allTileEntities = new HashMap<>();
+        Map<BlockPos, CompoundTag> allTileEntities = new HashMap<>();
         for (TileEntityEntry te : rotatedAlignerTEs) allTileEntities.put(te.pos, te.nbt);
         for (TileEntityEntry te : rotatedBasketTEs) allTileEntities.put(te.pos, te.nbt);
         for (TileEntityEntry te : transformedSlotATEs) allTileEntities.put(te.pos, te.nbt);
         for (TileEntityEntry te : transformedSlotBTEs) allTileEntities.put(te.pos, te.nbt);
 
-        for (Map.Entry<BlockPos, CompoundData> e : allTileEntities.entrySet()) {
+        for (Map.Entry<BlockPos, CompoundTag> e : allTileEntities.entrySet()) {
             BlockPos p = e.getKey();
             int rx = p.getX() - minX;
             int ry = p.getY() - minY;
             int rz = p.getZ() - minZ;
-            CompoundData tag = e.getValue().copy();
+            CompoundTag tag = e.getValue().copy();
             tag.putInt("x", rx);
             tag.putInt("y", ry);
             tag.putInt("z", rz);
@@ -783,21 +799,21 @@ public class ReturnCannonAssembler {
         }
 
         // 9. Build LitematicaSchematic NBT
-        CompoundData root = new CompoundData();
+        CompoundTag root = new CompoundTag();
         root.putInt("MinecraftDataVersion", LitematicaSchematic.MINECRAFT_DATA_VERSION);
         root.putInt("Version", LitematicaSchematic.SCHEMATIC_VERSION);
         root.putInt("SubVersion", LitematicaSchematic.SCHEMATIC_VERSION_SUB);
 
-        CompoundData regTag = new CompoundData();
-        regTag.put("BlockStatePalette", mainRegion.getContainer().getPalette().writeToData());
-        regTag.put("BlockStates", new LongArrayData(mainRegion.getContainer().getBackingLongArray()));
+        CompoundTag regTag = new CompoundTag();
+        regTag.put("BlockStatePalette", mainRegion.getContainer().getPalette().writeToNBT());
+        regTag.put("BlockStates", new LongArrayTag(mainRegion.getContainer().getBackingLongArray()));
 
-        ListData tileList = new ListData();
-        for (CompoundData teTag : mainRegion.getTileEntities().values()) {
+        ListTag tileList = new ListTag();
+        for (CompoundTag teTag : mainRegion.getTileEntities().values()) {
             tileList.add(teTag);
         }
         regTag.put("TileEntities", tileList);
-        regTag.put("Entities", new ListData());
+        regTag.put("Entities", new ListTag());
 
         // Position of the block under the lever in assembled coordinates:
         double levDx = -0.5;
@@ -810,13 +826,13 @@ public class ReturnCannonAssembler {
 
         BlockPos pos = new BlockPos(minX - lx, 0, minZ - lz);
         BlockPos size = new BlockPos(width, height, length);
-        regTag.put("Position", DataTypeUtils.createBlockPosTag(pos));
-        regTag.put("Size", DataTypeUtils.createBlockPosTag(size));
+        regTag.put("Position", createBlockPosTag(pos));
+        regTag.put("Size", createBlockPosTag(size));
 
         // Calculate placement origin (lever block at y=128)
         BlockPos placementOrigin = getSchematicOrigin(cannonStartPos.getX(), cannonStartPos.getZ(), alignerRotation, mirrorMode);
 
-        CompoundData regionsData = new CompoundData();
+        CompoundTag regionsData = new CompoundTag();
         String cannonSubregionName = String.format(Locale.ROOT,
                 "Cannon [Origin: %d, %d, %d | Pearl: %d, %d, %d]",
                 placementOrigin.getX(), placementOrigin.getY(), placementOrigin.getZ(),
@@ -831,13 +847,13 @@ public class ReturnCannonAssembler {
         NormalizedRegion catcherRegion = new NormalizedRegion(0, 0, 0, 1, 1, 1);
         catcherRegion.getContainer().set(0, 0, 0, Blocks.RED_STAINED_GLASS.defaultBlockState());
 
-        CompoundData catcherTag = new CompoundData();
-        catcherTag.put("BlockStatePalette", catcherRegion.getContainer().getPalette().writeToData());
-        catcherTag.put("BlockStates", new LongArrayData(catcherRegion.getContainer().getBackingLongArray()));
-        catcherTag.put("TileEntities", new ListData());
-        catcherTag.put("Entities", new ListData());
-        catcherTag.put("Position", DataTypeUtils.createBlockPosTag(catcherRelativePos));
-        catcherTag.put("Size", DataTypeUtils.createBlockPosTag(catcherSize));
+        CompoundTag catcherTag = new CompoundTag();
+        catcherTag.put("BlockStatePalette", catcherRegion.getContainer().getPalette().writeToNBT());
+        catcherTag.put("BlockStates", new LongArrayTag(catcherRegion.getContainer().getBackingLongArray()));
+        catcherTag.put("TileEntities", new ListTag());
+        catcherTag.put("Entities", new ListTag());
+        catcherTag.put("Position", createBlockPosTag(catcherRelativePos));
+        catcherTag.put("Size", createBlockPosTag(catcherSize));
 
         String catcherSubregionName = String.format(Locale.ROOT,
                 "Catcher [%d, %d, %d] Pearl (%.2f, %.2f, %.2f)",
@@ -850,7 +866,7 @@ public class ReturnCannonAssembler {
         );
         regionsData.put(catcherSubregionName, catcherTag);
 
-        CompoundData meta = new CompoundData();
+        CompoundTag meta = new CompoundTag();
         meta.putString("Name", schematicName);
         meta.putString("Author", "Return Cannon Generator");
         meta.putString("Description", String.format(Locale.ROOT,
@@ -885,7 +901,7 @@ public class ReturnCannonAssembler {
         int allMaxX = Math.max(pos.getX() + width, catcherRelativePos.getX() + 1);
         int allMaxY = Math.max(pos.getY() + height, catcherRelativePos.getY() + 1);
         int allMaxZ = Math.max(pos.getZ() + length, catcherRelativePos.getZ() + 1);
-        meta.put("EnclosingSize", DataTypeUtils.createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
+        meta.put("EnclosingSize", createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
 
         root.put("Metadata", meta);
         root.put("Regions", regionsData);

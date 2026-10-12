@@ -75,7 +75,7 @@ public class SchematicTilerUtil {
     public static TilingTree loadTilingTree(Path file) throws Exception {
         LitematicaSchematic schem = null;
         try {
-            CompoundData data = DataFileUtils.readCompoundDataFromNbtFile(file);
+            CompoundTag data = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
             if (data != null) {
                 data.putInt("MinecraftDataVersion", LitematicaSchematic.MINECRAFT_DATA_VERSION);
                 schem = new LitematicaSchematic(file, data, FileType.LITEMATICA_SCHEMATIC);
