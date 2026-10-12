@@ -75,7 +75,18 @@ public class SchematicTilerUtil {
     }
 
     public static TilingTree loadTilingTree(File file) throws Exception {
-        LitematicaSchematic schem = LitematicaSchematic.createFromFile(file.getParentFile(), file.getName());
+        LitematicaSchematic schem = null;
+        try {
+            CompoundTag data = NbtIo.readCompressed(file.toPath(), NbtAccounter.unlimitedHeap());
+            if (data != null) {
+                data.putInt("MinecraftDataVersion", LitematicaSchematic.MINECRAFT_DATA_VERSION);
+                schem = new LitematicaSchematic(file.toPath(), data, FileType.LITEMATICA_SCHEMATIC);
+            }
+        } catch (Throwable ignored) {}
+
+        if (schem == null) {
+            schem = LitematicaSchematic.createFromFile(file.getParentFile(), file.getName());
+        }
         if (schem == null) {
             throw new IOException("Failed to load schematic file: " + file.getName());
         }
