@@ -53,6 +53,16 @@ For advanced documentation, syntax details, and design methodology behind modula
 
 ---
 
+## Return Cannon Generator
+
+The mod features an in-game Return Cannon generator powered by a pearl trajectory calculator. It calculates the necessary TNT explosion charges, duper sizing, and launch timing to propel an ender pearl back to a designated catch station or origin, automatically assembling a complete ready-to-build `.litematic` schematic with all dupers, aligners, wire bridges, and catcher blocks.
+
+To open the Return Cannon menu, create or load an area selection or schematic placement whose name ends with `cannon` (for example, `Return_Cannon`), then open the Litematica Area Selection Editor (`Area Selection Editor`). A **Return Cannon** button appears in the top right corner of the window. Clicking it opens the configuration dialog where you can configure landing coordinates, launch directions, player offsets, and generate the complete schematic.
+
+Please use pearl cannon creation with caution as it has not been extensively tested across every scenario and edge case.
+
+---
+
 ## Supported Versions & Branches
 
 | Minecraft Version | Branch | Litematica Version | MaLiLib Version |
@@ -81,5 +91,11 @@ The compiled mod jar will be in `build/libs/`.
 
 ## Credits
 
-- Original Python tool, mathematical algorithm, and design by [EQUENOS-2](https://github.com/EQUENOS-2/Schematic-Tiling).
-- [Litematica](https://github.com/maruohon/litematica) & [MaLiLib](https://github.com/maruohon/malilib) by [masa](https://github.com/maruohon) and [Sakura-Ryoko](https://github.com/Sakura-Ryoko).
+Original Python tool, mathematical algorithm, and design by [EQUENOS-2](https://github.com/EQUENOS-2/Schematic-Tiling).
+
+Pearl trajectory calculation logic adapted from Pearl Calculator.
+
+Return pearl cannon design and redstone architecture by garlic bread, documented in the [Return Cannon Tutorial (How to make your own return pearl cannons)](https://www.youtube.com/watch?v=MkEJpBAtin8).
+
+[Litematica](https://github.com/maruohon/litematica) and [MaLiLib](https://github.com/maruohon/malilib) by [masa](https://github.com/maruohon) and [Sakura-Ryoko](https://github.com/Sakura-Ryoko).
+
