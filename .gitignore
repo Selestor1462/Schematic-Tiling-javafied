@@ -36,3 +36,5 @@ all_jars/
 *.py
 scratch/
 /return_cannon/
+*.litematic
+logs/
