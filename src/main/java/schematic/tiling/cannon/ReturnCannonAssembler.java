@@ -227,8 +227,8 @@ public class ReturnCannonAssembler {
      */
     public static boolean isSlotARed(PearlCalculator.Direction flightDirection, PearlCalculator.CannonSettings settings) {
         return switch (flightDirection) {
-            case NORTH, EAST -> true;  // Slot A = Red (Left, pushes Left),  Slot B = Blue (Right, pushes Right)
-            case SOUTH, WEST -> false; // Slot A = Blue (Left, pushes Left), Slot B = Red (Right, pushes Right)
+            case NORTH, EAST -> false; // Slot A = Blue, Slot B = Red
+            case SOUTH, WEST -> true;  // Slot A = Red,  Slot B = Blue
         };
     }
 
