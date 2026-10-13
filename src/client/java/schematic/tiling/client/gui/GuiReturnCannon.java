@@ -243,7 +243,6 @@ public class GuiReturnCannon extends GuiBase {
             case OFF -> "§7Mirror: OFF";
             case FRONT_BACK -> "§aMirror: Front-Back";
             case LEFT_RIGHT -> "§bMirror: Left-Right";
-            case BOTH -> "§6Mirror: Both";
         };
     }
 

@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.state.properties.PistonType;
 import net.minecraft.world.level.block.state.properties.RedstoneSide;
 
@@ -201,8 +202,7 @@ public class ReturnCannonAssembler {
     public enum MirrorMode {
         OFF("OFF", false, false),
         FRONT_BACK("Front-Back", true, false),
-        LEFT_RIGHT("Left-Right", false, true),
-        BOTH("Both", true, true);
+        LEFT_RIGHT("Left-Right", false, true);
 
         public final String label;
         public final boolean flipX;
@@ -227,8 +227,8 @@ public class ReturnCannonAssembler {
      */
     public static boolean isSlotARed(PearlCalculator.Direction flightDirection, PearlCalculator.CannonSettings settings) {
         return switch (flightDirection) {
-            case NORTH, EAST -> false; // Slot A = Blue, Slot B = Red
-            case SOUTH, WEST -> true;  // Slot A = Red,  Slot B = Blue
+            case NORTH, EAST -> true;  // Slot A = Red (Left, pushes Left),  Slot B = Blue (Right, pushes Right)
+            case SOUTH, WEST -> false; // Slot A = Blue (Left, pushes Left), Slot B = Red (Right, pushes Right)
         };
     }
 
@@ -549,6 +549,14 @@ public class ReturnCannonAssembler {
             }
             if (mirrorMode.flipZ) {
                 state = state.mirror(Mirror.LEFT_RIGHT);
+            }
+            if (mirrorMode != MirrorMode.OFF && state.hasProperty(BlockStateProperties.CHEST_TYPE)) {
+                ChestType ct = state.getValue(BlockStateProperties.CHEST_TYPE);
+                if (ct == ChestType.LEFT) {
+                    state = state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.RIGHT);
+                } else if (ct == ChestType.RIGHT) {
+                    state = state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.LEFT);
+                }
             }
             state = state.rotate(alignerRotation);
             rotatedAligner.add(new BlockEntry(new BlockPos(wx, wy, wz), state));

@@ -558,23 +558,30 @@ public class PearlCalculator {
                     // Simulate tick T+1 to get catch block location
                     Space3D[] nextStep = runPost1212Tick(bestPos, bestMot);
                     Space3D catchPosRel = nextStep[0];
+                    Space3D catchMotRel = nextStep[1];
+
+                    double worldArrivalY = cannonStartPos.getY() >= 150
+                            ? cannonStartPos.getY() + (bestPos.y - settings.pearlAdjustedY)
+                            : bestPos.y;
+                    double worldCatchY = cannonStartPos.getY() >= 150
+                            ? cannonStartPos.getY() + (catchPosRel.y - settings.pearlAdjustedY)
+                            : catchPosRel.y;
 
                     // Convert to world coordinates
                     Space3D worldArrival = new Space3D(
                             cannonStartPos.getX() + bestPos.x,
-                            cannonStartPos.getY() + (bestPos.y - settings.pearlAdjustedY),
+                            worldArrivalY,
                             cannonStartPos.getZ() + bestPos.z
                     );
                     Space3D worldCatch = new Space3D(
                             cannonStartPos.getX() + catchPosRel.x,
-                            cannonStartPos.getY() + (catchPosRel.y - settings.pearlAdjustedY),
+                            worldCatchY,
                             cannonStartPos.getZ() + catchPosRel.z
                     );
-                    BlockPos catchBlock = new BlockPos(
-                            (int) Math.floor(worldCatch.x),
-                            (int) Math.floor(worldCatch.y),
-                            (int) Math.floor(worldCatch.z)
-                    );
+                    int catchX = (catchMotRel.x < 0) ? (int) Math.floor(worldCatch.x) + 1 : (int) Math.floor(worldCatch.x);
+                    int catchY = (int) Math.floor(worldCatch.y);
+                    int catchZ = (catchMotRel.z < 0) ? (int) Math.floor(worldCatch.z) + 1 : (int) Math.floor(worldCatch.z);
+                    BlockPos catchBlock = new BlockPos(catchX, catchY, catchZ);
 
                     // Stopper block and arrival point must be on or above the Nether roof (Y >= 128)
                     if (catchBlock.getY() < NETHER_ROOF_MIN_Y || worldArrival.y < NETHER_ROOF_MIN_Y) {
