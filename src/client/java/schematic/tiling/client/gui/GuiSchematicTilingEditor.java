@@ -544,9 +544,9 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 break;
             }
             if (i == 0) {
-                this.drawString(ctx, "§c[!] " + wrapped.get(i), x, y, 0xFFFF4444);
+                this.drawString(ctx, "\u00a7c[!] " + wrapped.get(i), x, y, 0xFFFF4444);
             } else {
-                this.drawString(ctx, "§c" + wrapped.get(i), x + markerW, y, 0xFFFF4444);
+                this.drawString(ctx, "\u00a7c" + wrapped.get(i), x + markerW, y, 0xFFFF4444);
             }
             y += 12;
         }
@@ -899,7 +899,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 );
                 List<String> hovers = new ArrayList<>();
                 for (String err : allGroupErrors) {
-                    hovers.add("§c[!] " + err);
+                    hovers.add("\u00a7c[!] " + err);
                 }
                 hovers.add(StringUtils.translate("schematic_tiling.gui.editor.hover.group_settings_click", gName));
                 gRowBtn.setHoverStrings(String.join("\n", hovers));
@@ -1098,7 +1098,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                     List<String> sgHoverList = new ArrayList<>();
                     if (sgHasError) {
                         for (String err : sgErrors) {
-                            sgHoverList.add("§c[!] " + err);
+                            sgHoverList.add("\u00a7c[!] " + err);
                         }
                     }
                     if (isSGSel) {
@@ -1183,7 +1183,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                         List<String> hoverList = new ArrayList<>();
                         if (hasError) {
                             for (String err : errors) {
-                                hoverList.add("§c[!] " + err);
+                                hoverList.add("\u00a7c[!] " + err);
                             }
                         }
                         hoverList.add(isEditingThis ? StringUtils.translate("schematic_tiling.gui.editor.hover.editing_tile", tm.getName()) : StringUtils.translate("schematic_tiling.gui.editor.hover.edit_tile", tm.getName()));
@@ -2774,7 +2774,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
             int maxErrW = this.getScreenWidth() - rightX - 25;
             int screenBottom = this.getScreenHeight() - 36;
             if (!groupInconsistencies.isEmpty()) {
-                this.drawStringWithShadow(ctx, "§c" + StringUtils.translate("schematic_tiling.gui.editor.label.inconsistencies"), rightX, gErrY, 0xFFFF4444);
+                this.drawStringWithShadow(ctx, "\u00a7c" + StringUtils.translate("schematic_tiling.gui.editor.label.inconsistencies"), rightX, gErrY, 0xFFFF4444);
                 gErrY += 14;
                 for (String err : groupInconsistencies) {
                     if (gErrY > screenBottom) break;
@@ -2804,7 +2804,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                         List<String> tErrs = this.getTileErrors(sg, tm);
                         boolean hasErr = !tErrs.isEmpty();
                         String roleStr = tm.getXDep() == XDependence.CAP ? StringUtils.translate("schematic_tiling.gui.editor.role_tag.cap") : (tm.getXDep() == XDependence.TILE ? StringUtils.translate("schematic_tiling.gui.editor.role_tag.tile") : StringUtils.translate("schematic_tiling.gui.editor.role_tag.static"));
-                        String line = (hasErr ? "§c! • " : "• ") + tm.getName() + " (" + roleStr + ")";
+                        String line = (hasErr ? "\u00a7c! • " : "• ") + tm.getName() + " (" + roleStr + ")";
                         this.drawString(ctx, line, rightX + 6, ty, hasErr ? 0xFFFF4444 : COLOR_WHITE);
                         ty += 14;
                         if (ty > this.getScreenHeight() - 60) break;
@@ -2815,7 +2815,7 @@ public class GuiSchematicTilingEditor extends GuiBase {
                 List<String> sgErrors = this.getSubgroupErrors(sg);
                 if (!sgErrors.isEmpty()) {
                     endY += 6;
-                    this.drawStringWithShadow(ctx, "§c" + StringUtils.translate("schematic_tiling.gui.editor.label.inconsistencies"), rightX, endY, 0xFFFF4444);
+                    this.drawStringWithShadow(ctx, "\u00a7c" + StringUtils.translate("schematic_tiling.gui.editor.label.inconsistencies"), rightX, endY, 0xFFFF4444);
                     endY += 14;
                     int maxErrW = this.getScreenWidth() - rightX - 25;
                     int screenBottom = this.getScreenHeight() - 36;
