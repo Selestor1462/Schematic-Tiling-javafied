@@ -31,6 +31,7 @@ import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.FileNameUtils;
 import fi.dy.masa.malilib.util.InfoUtils;
+import fi.dy.masa.malilib.util.StringUtils;
 
 import schematic.tiling.cannon.PearlCalculator;
 import schematic.tiling.cannon.PearlCalculator.CalculationResult;
@@ -67,6 +68,7 @@ public class GuiReturnCannon extends GuiBase {
     // Checkboxes
     private WidgetCheckBox checkboxLoadToMemory;
     private WidgetCheckBox checkboxCreatePlacement;
+    private WidgetCheckBox checkboxPowderSnow;
 
     public enum SortMode {
         DISTANCE("Distance"),
@@ -109,6 +111,7 @@ public class GuiReturnCannon extends GuiBase {
     private static String lastMaxDist = "10.0";
     private static boolean lastLoadToMemory = true;
     private static boolean lastCreatePlacement = true;
+    private static boolean lastGeneratePowderSnow = false;
     private static List<CalculationResult> lastSolutions = new ArrayList<>();
     private static int lastSelectedSolutionIndex = -1;
     private static int lastPage = 0;
@@ -123,7 +126,7 @@ public class GuiReturnCannon extends GuiBase {
         this.selection = selection;
         this.parent = parent;
         this.setParent(parent);
-        this.title = "Return Cannon Generator";
+        this.title = StringUtils.translate("schematic_tiling.gui.cannon.title");
 
         if (selection != lastSelection) {
             lastSelection = selection;
@@ -160,6 +163,7 @@ public class GuiReturnCannon extends GuiBase {
         lastMirrorMode = this.mirrorMode;
         if (this.checkboxLoadToMemory != null) lastLoadToMemory = this.checkboxLoadToMemory.isChecked();
         if (this.checkboxCreatePlacement != null) lastCreatePlacement = this.checkboxCreatePlacement.isChecked();
+        if (this.checkboxPowderSnow != null) lastGeneratePowderSnow = this.checkboxPowderSnow.isChecked();
         lastSolutions = this.solutions;
         lastSelectedSolutionIndex = this.selectedSolutionIndex;
         lastPage = this.page;
@@ -240,9 +244,9 @@ public class GuiReturnCannon extends GuiBase {
 
     private String getMirrorBtnLabel() {
         return switch (this.mirrorMode) {
-            case OFF -> "§7Mirror: OFF";
-            case FRONT_BACK -> "§aMirror: Front-Back";
-            case LEFT_RIGHT -> "§bMirror: Left-Right";
+            case OFF -> StringUtils.translate("schematic_tiling.gui.cannon.button.mirror_off");
+            case FRONT_BACK -> StringUtils.translate("schematic_tiling.gui.cannon.button.mirror_front_back");
+            case LEFT_RIGHT -> StringUtils.translate("schematic_tiling.gui.cannon.button.mirror_left_right");
         };
     }
 
@@ -276,6 +280,16 @@ public class GuiReturnCannon extends GuiBase {
         int col1X = startX + 15;
         int y = startY + 30;
 
+        if (GuiReturnCannonDebug.debugModeEnabled) {
+            String debugLabel = "\u00a7b" + StringUtils.translate("schematic_tiling.gui.cannon.button.debug_menu");
+            int debugBtnW = Math.max(85, this.getStringWidth(debugLabel) + 12);
+            ButtonGeneric debugBtn = new ButtonGeneric(startX + dialogWidth - 15 - debugBtnW, startY + 5, debugBtnW, 18, debugLabel);
+            this.addButton(debugBtn, (btn, mouse) -> {
+                this.saveGuiState();
+                GuiBase.openGui(new GuiReturnCannonDebug(this, this.settings));
+            });
+        }
+
         String defaultSXStr = String.valueOf(defaultPos.getX());
         String defaultSZStr = String.valueOf(defaultPos.getZ());
         String defaultMaxTntStr = String.valueOf(this.settings.maxTNT);
@@ -298,14 +312,14 @@ public class GuiReturnCannon extends GuiBase {
         this.startZField.setTextWrapper(curSZ);
         this.addTextField(this.startZField, null);
 
-        ButtonGeneric toPlayerBtn = new ButtonGeneric(col1X + 148, y, 58, 18, "To Player");
+        ButtonGeneric toPlayerBtn = new ButtonGeneric(col1X + 148, y, 58, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.to_player"));
         this.addButton(toPlayerBtn, (btn, mouse) -> {
             if (this.mc != null && this.mc.player != null) {
                 BlockPos playerPos = this.mc.player.blockPosition();
                 this.startXField.setTextWrapper(String.valueOf(playerPos.getX()));
                 this.startZField.setTextWrapper(String.valueOf(playerPos.getZ()));
                 this.saveGuiState();
-                this.statusMessage = String.format(Locale.ROOT, "Start set to player: [%d, %d]", playerPos.getX(), playerPos.getZ());
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.start_set_player", playerPos.getX(), playerPos.getZ());
                 this.statusIsError = false;
             }
         });
@@ -320,7 +334,7 @@ public class GuiReturnCannon extends GuiBase {
         this.destZField.setTextWrapper(curDZ);
         this.addTextField(this.destZField, null);
 
-        ButtonGeneric toPlayerDestBtn = new ButtonGeneric(col1X + 148, y, 58, 18, "To Player");
+        ButtonGeneric toPlayerDestBtn = new ButtonGeneric(col1X + 148, y, 58, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.to_player"));
         this.addButton(toPlayerDestBtn, (btn, mouse) -> {
             if (this.mc != null && this.mc.player != null) {
                 double px = this.mc.player.getX();
@@ -328,23 +342,25 @@ public class GuiReturnCannon extends GuiBase {
                 this.destXField.setTextWrapper(String.format(Locale.ROOT, "%.1f", px));
                 this.destZField.setTextWrapper(String.format(Locale.ROOT, "%.1f", pz));
                 this.saveGuiState();
-                this.statusMessage = String.format(Locale.ROOT, "Dest set to player: [%.1f, %.1f]", px, pz);
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.dest_set_player",
+                        String.format(Locale.ROOT, "%.1f", px), String.format(Locale.ROOT, "%.1f", pz));
                 this.statusIsError = false;
             }
         });
         y += 22;
 
         // --- Aligner Facing & Mirror ---
-        this.alignerFacingBtn = new ButtonGeneric(col1X + 44, y, 50, 18, this.alignerFacing.name);
+        String facingName = StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT));
+        this.alignerFacingBtn = new ButtonGeneric(col1X + 44, y, 48, 18, facingName);
         this.addButton(this.alignerFacingBtn, (btn, mouse) -> {
             PearlCalculator.Direction[] dirs = PearlCalculator.Direction.values();
             int next = (this.alignerFacing.ordinal() + 1) % dirs.length;
             this.alignerFacing = dirs[next];
-            this.alignerFacingBtn.setDisplayString(this.alignerFacing.name);
+            this.alignerFacingBtn.setDisplayString(StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT)));
             this.saveGuiState();
         });
 
-        this.mirrorAlignerBtn = new ButtonGeneric(col1X + 98, y, 108, 18, this.getMirrorBtnLabel());
+        this.mirrorAlignerBtn = new ButtonGeneric(col1X + 96, y, 110, 18, this.getMirrorBtnLabel());
         this.addButton(this.mirrorAlignerBtn, (btn, mouse) -> {
             this.mirrorMode = this.mirrorMode.next();
             this.mirrorAlignerBtn.setDisplayString(this.getMirrorBtnLabel());
@@ -369,7 +385,7 @@ public class GuiReturnCannon extends GuiBase {
         y += 22;
 
         // --- Calculate Button ---
-        ButtonGeneric calcBtn = new ButtonGeneric(col1X, y, 206, 20, "Calculate Solutions");
+        ButtonGeneric calcBtn = new ButtonGeneric(col1X, y, 206, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.calculate_solutions"));
         this.addButton(calcBtn, (btn, mouse) -> this.runCalculation());
 
         // --- Results Pagination Buttons (Right Side) ---
@@ -378,7 +394,7 @@ public class GuiReturnCannon extends GuiBase {
         int resultsY = startY + 30;
         int navY = startY + 160;
 
-        ButtonGeneric prevBtn = new ButtonGeneric(resultsX, navY, 114, 18, "< Prev");
+        ButtonGeneric prevBtn = new ButtonGeneric(resultsX, navY, 114, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.prev"));
         prevBtn.setEnabled(this.page > 0);
         this.addButton(prevBtn, (btn, mouse) -> {
             if (this.page > 0) {
@@ -388,7 +404,7 @@ public class GuiReturnCannon extends GuiBase {
         });
 
         int maxPage = Math.max(0, (this.solutions.size() - 1) / RESULTS_PER_PAGE);
-        ButtonGeneric nextBtn = new ButtonGeneric(resultsX + 121, navY, 114, 18, "Next >");
+        ButtonGeneric nextBtn = new ButtonGeneric(resultsX + 121, navY, 114, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.next"));
         nextBtn.setEnabled(this.page < maxPage);
         this.addButton(nextBtn, (btn, mouse) -> {
             if (this.page < maxPage) {
@@ -399,15 +415,18 @@ public class GuiReturnCannon extends GuiBase {
 
         // --- Sort Buttons ---
         int sortBtnY = startY + 196;
-        String distLabel = (this.sortMode == SortMode.DISTANCE) ? (this.sortAscending ? "§eDist ▲" : "§eDist ▼") : "Dist";
+        String distName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_dist");
+        String distLabel = (this.sortMode == SortMode.DISTANCE) ? (this.sortAscending ? "\u00a7e" + distName + " ▲" : "\u00a7e" + distName + " ▼") : distName;
         ButtonGeneric btnDist = new ButtonGeneric(resultsX, sortBtnY, 75, 18, distLabel);
         this.addButton(btnDist, (btn, mouse) -> this.setSortMode(SortMode.DISTANCE));
 
-        String tntLabel = (this.sortMode == SortMode.TNT) ? (this.sortAscending ? "§eTNT ▲" : "§eTNT ▼") : "TNT";
+        String tntName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_tnt");
+        String tntLabel = (this.sortMode == SortMode.TNT) ? (this.sortAscending ? "\u00a7e" + tntName + " ▲" : "\u00a7e" + tntName + " ▼") : tntName;
         ButtonGeneric btnTnt = new ButtonGeneric(resultsX + 80, sortBtnY, 75, 18, tntLabel);
         this.addButton(btnTnt, (btn, mouse) -> this.setSortMode(SortMode.TNT));
 
-        String ticksLabel = (this.sortMode == SortMode.TICKS) ? (this.sortAscending ? "§eTicks ▲" : "§eTicks ▼") : "Ticks";
+        String ticksName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_ticks");
+        String ticksLabel = (this.sortMode == SortMode.TICKS) ? (this.sortAscending ? "\u00a7e" + ticksName + " ▲" : "\u00a7e" + ticksName + " ▼") : ticksName;
         ButtonGeneric btnTicks = new ButtonGeneric(resultsX + 160, sortBtnY, 75, 18, ticksLabel);
         this.addButton(btnTicks, (btn, mouse) -> this.setSortMode(SortMode.TICKS));
 
@@ -420,15 +439,21 @@ public class GuiReturnCannon extends GuiBase {
             int rowY = resultsY + ((i - pageStart) * 26);
             boolean isSelected = (this.selectedSolutionIndex == solIdx);
 
+            String dirName = StringUtils.translate("schematic_tiling.direction." + res.direction.name().toLowerCase(Locale.ROOT));
             String label = String.format(Locale.ROOT, "#%d: %d TNT (R:%d B:%d) %s %dt (%.2fm)",
-                    solIdx + 1, res.getTotalTNT(), res.redTNT, res.blueTNT, res.direction.name, res.tick, res.distance);
+                    solIdx + 1, res.getTotalTNT(), res.redTNT, res.blueTNT, dirName, res.tick, res.distance);
+
+            String arrivalX = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.x);
+            String arrivalY = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.y);
+            String arrivalZ = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.z);
+            String distStr = String.format(Locale.ROOT, "%.2f", res.distance);
 
             ButtonGeneric rowBtn = new ButtonGeneric(resultsX, rowY, resultsW, 22, label,
-                    String.format(Locale.ROOT, "§6Total TNT: §e%d §7(Red: §c%d§7, Blue: §9%d§7)",
+                    StringUtils.translate("schematic_tiling.gui.cannon.hover.total_tnt",
                             res.getTotalTNT(), res.redTNT, res.blueTNT),
-                    String.format(Locale.ROOT, "§eLanding: §f(%.2f, %.2f, %.2f) §7[%.2fm]",
-                            res.worldArrivalPos.x, res.worldArrivalPos.y, res.worldArrivalPos.z, res.distance),
-                    String.format(Locale.ROOT, "§6Stopper: §f[%d, %d, %d]",
+                    StringUtils.translate("schematic_tiling.gui.cannon.hover.landing",
+                            arrivalX, arrivalY, arrivalZ, distStr),
+                    StringUtils.translate("schematic_tiling.gui.cannon.hover.stopper",
                             res.catchBlockPos.getX(), res.catchBlockPos.getY(), res.catchBlockPos.getZ())
             );
             if (isSelected) {
@@ -457,29 +482,36 @@ public class GuiReturnCannon extends GuiBase {
         this.schematicNameField = new GuiTextFieldGeneric(resultsX, startY + 236, resultsW, 18, this.font);
         this.schematicNameField.setMaxLengthWrapper(128);
         this.schematicNameField.setTextWrapper(curSchemName);
-        this.schematicNameField.setHoverTooltip("§eSchematic Name", "§7Name of the generated schematic and subregion metadata");
+        this.schematicNameField.setHoverTooltip(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.schematic_name_title"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.schematic_name_desc"));
         this.addTextField(this.schematicNameField, null);
 
         // --- Bottom Area: Checkboxes & Actions ---
-        int bottomY = startY + 246;
+        int bottomY = startY + 244;
         boolean loadMem = (this.checkboxLoadToMemory != null) ? this.checkboxLoadToMemory.isChecked() : lastLoadToMemory;
         boolean createPlace = (this.checkboxCreatePlacement != null) ? this.checkboxCreatePlacement.isChecked() : lastCreatePlacement;
+        boolean genSnow = (this.checkboxPowderSnow != null) ? this.checkboxPowderSnow.isChecked() : lastGeneratePowderSnow;
 
-        this.checkboxLoadToMemory = new WidgetCheckBox(startX + 15, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, "Load to memory");
+        this.checkboxLoadToMemory = new WidgetCheckBox(startX + 15, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.load_to_memory"));
         this.checkboxLoadToMemory.setChecked(loadMem, false);
         this.addWidget(this.checkboxLoadToMemory);
 
-        this.checkboxCreatePlacement = new WidgetCheckBox(startX + 125, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, "Create placement");
+        this.checkboxCreatePlacement = new WidgetCheckBox(startX + 115, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.create_placement"));
         this.checkboxCreatePlacement.setChecked(createPlace, false);
         this.addWidget(this.checkboxCreatePlacement);
 
-        int btnY = startY + 282;
+        this.checkboxPowderSnow = new WidgetCheckBox(startX + 15, bottomY + 15, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.powder_snow"));
+        this.checkboxPowderSnow.setChecked(genSnow, false);
+        this.addWidget(this.checkboxPowderSnow);
 
-        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, btnY, 110, 20, "Generate Schem");
+        int btnY = startY + 276;
+
+        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, btnY, 110, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.generate_schem"));
         assembleBtn.setEnabled(hasSol);
         this.addButton(assembleBtn, (btn, mouse) -> this.generateSchematic());
 
-        ButtonGeneric copyLandingBtn = new ButtonGeneric(startX + 130, btnY, 80, 20, "Copy Land");
+        ButtonGeneric copyLandingBtn = new ButtonGeneric(startX + 130, btnY, 80, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_landing"));
         copyLandingBtn.setEnabled(hasSol);
         this.addButton(copyLandingBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null) {
@@ -487,37 +519,39 @@ public class GuiReturnCannon extends GuiBase {
                 String landingStr = String.format(Locale.ROOT, "%.2f %.2f %.2f",
                         sel.worldArrivalPos.x, sel.worldArrivalPos.y, sel.worldArrivalPos.z);
                 this.mc.keyboardHandler.setClipboard(landingStr);
-                this.statusMessage = String.format(Locale.ROOT, "Copied Landing: (%.2f, %.2f, %.2f)",
-                        sel.worldArrivalPos.x, sel.worldArrivalPos.y, sel.worldArrivalPos.z);
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.copied_landing",
+                        String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.x),
+                        String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.y),
+                        String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.z));
                 this.statusIsError = false;
             }
         });
 
-        ButtonGeneric copyCatchBtn = new ButtonGeneric(startX + 215, btnY, 72, 20, "Copy Catch");
+        ButtonGeneric copyCatchBtn = new ButtonGeneric(startX + 215, btnY, 72, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_catch"));
         copyCatchBtn.setEnabled(hasSol);
         this.addButton(copyCatchBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null) {
                 CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
                 this.mc.keyboardHandler.setClipboard(String.format(Locale.ROOT, "%d %d %d",
                         sel.catchBlockPos.getX(), sel.catchBlockPos.getY(), sel.catchBlockPos.getZ()));
-                this.statusMessage = "Copied Catch: " + sel.catchBlockPos.toShortString();
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.copied_catch", sel.catchBlockPos.toShortString());
                 this.statusIsError = false;
             }
         });
 
-        ButtonGeneric setblockBtn = new ButtonGeneric(startX + 292, btnY, 92, 20, "Setblock Catch");
+        ButtonGeneric setblockBtn = new ButtonGeneric(startX + 292, btnY, 92, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.setblock_catch"));
         setblockBtn.setEnabled(hasSol && !schematic.tiling.client.util.CatchBlockPlacer.isRunning());
         this.addButton(setblockBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null && this.mc.player != null) {
                 CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
                 BlockPos cp = sel.catchBlockPos;
                 schematic.tiling.client.util.CatchBlockPlacer.startPlacement(cp);
-                this.statusMessage = String.format(Locale.ROOT, "Placing catch block at [%d, %d, %d]...", cp.getX(), cp.getY(), cp.getZ());
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.placing_catch", cp.getX(), cp.getY(), cp.getZ());
                 this.statusIsError = false;
             }
         });
 
-        ButtonGeneric closeBtn = new ButtonGeneric(startX + dialogWidth - 75, btnY, 60, 20, "Close");
+        ButtonGeneric closeBtn = new ButtonGeneric(startX + dialogWidth - 75, btnY, 60, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.close"));
         this.addButton(closeBtn, (btn, mouse) -> {
             this.saveGuiState();
             GuiBase.openGui(this.parent);
@@ -549,10 +583,10 @@ public class GuiReturnCannon extends GuiBase {
             this.selectedSolutionIndex = this.solutions.isEmpty() ? -1 : 0;
 
             if (this.solutions.isEmpty()) {
-                this.statusMessage = "No valid solutions found within range.";
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_solutions");
                 this.statusIsError = true;
             } else {
-                this.statusMessage = "Found " + this.solutions.size() + " solutions!";
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.found_solutions", this.solutions.size());
                 this.statusIsError = false;
             }
         } catch (Throwable t) {
@@ -561,6 +595,30 @@ public class GuiReturnCannon extends GuiBase {
         }
         this.saveGuiState();
         this.initGui();
+    }
+
+    public void loadPresetAndCalculate(
+            int startX, int startZ,
+            double destX, double destZ,
+            PearlCalculator.Direction alignerFacing,
+            ReturnCannonAssembler.MirrorMode mirrorMode,
+            String name
+    ) {
+        lastSX = String.valueOf(startX);
+        lastSZ = String.valueOf(startZ);
+        lastDX = String.valueOf(destX);
+        lastDZ = String.valueOf(destZ);
+        lastAlignerFacing = alignerFacing;
+        lastMirrorMode = mirrorMode;
+        lastSchemName = name;
+        this.alignerFacing = alignerFacing;
+        this.mirrorMode = mirrorMode;
+        if (this.startXField != null) this.startXField.setTextWrapper(lastSX);
+        if (this.startZField != null) this.startZField.setTextWrapper(lastSZ);
+        if (this.destXField != null) this.destXField.setTextWrapper(lastDX);
+        if (this.destZField != null) this.destZField.setTextWrapper(lastDZ);
+        if (this.schematicNameField != null) this.schematicNameField.setTextWrapper(name);
+        this.runCalculation();
     }
 
     private void generateSchematic() {
@@ -588,17 +646,19 @@ public class GuiReturnCannon extends GuiBase {
 
             ReturnCannonAssembler assembler = new ReturnCannonAssembler(gameDir);
 
-            // Assembles cannon with main Cannon subregion + 1-block Catcher subregion
+            // Assembles cannon with main Cannon subregion + 1-block Catcher subregion (+ optional Landing subregion)
+            boolean genSnow = this.checkboxPowderSnow != null && this.checkboxPowderSnow.isChecked();
             LitematicaSchematic schem = assembler.assembleCannon(
                     this.alignerFacing.getAlignerRotation(),
                     this.mirrorMode,
                     sol,
                     this.settings,
                     schemName,
-                    cannonStart
+                    cannonStart,
+                    genSnow
             );
 
-            this.statusMessage = "Please save schematic to finish generation.";
+            this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.save_to_finish");
             this.statusIsError = false;
 
             this.saveGuiState();
@@ -650,16 +710,16 @@ public class GuiReturnCannon extends GuiBase {
         int y = startY + 30;
 
         // Labels matching field Y offsets
-        this.drawString(ctx, "Start:", col1X, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.start"), col1X, y + 5, 0xFFAAAAAA);
         y += 22;
-        this.drawString(ctx, "Dest:", col1X, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.dest"), col1X, y + 5, 0xFFAAAAAA);
         y += 22;
-        this.drawString(ctx, "Aligner:", col1X, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.aligner"), col1X, y + 5, 0xFFAAAAAA);
         y += 22;
-        this.drawString(ctx, "MaxTNT:", col1X, y + 5, 0xFFAAAAAA);
-        this.drawString(ctx, "Ticks:", col1X + 104, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.max_tnt"), col1X, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.ticks"), col1X + 104, y + 5, 0xFFAAAAAA);
         y += 22;
-        this.drawString(ctx, "Max Dist:", col1X, y + 5, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.max_dist"), col1X, y + 5, 0xFFAAAAAA);
         y += 22; // Skips to Calculate button (startY + 140)
         y += 24; // Skips to Details box (startY + 164)
 
@@ -671,39 +731,49 @@ public class GuiReturnCannon extends GuiBase {
             int boxH = 76;
             RenderUtils.drawOutlinedBox(ctx, col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
 
-            this.drawString(ctx, String.format(Locale.ROOT, "§e§lLanding (Tick %d): §a[%.2fm]", sel.tick, sel.distance),
+            String distStr = String.format(Locale.ROOT, "%.2f", sel.distance);
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.landing", sel.tick, distStr),
                     col1X + 6, boxY + 5, 0xFFFFFF55);
-            this.drawString(ctx, String.format(Locale.ROOT, "§7Pos: §f%.2f, %.2f, %.2f",
-                            sel.worldArrivalPos.x, sel.worldArrivalPos.y, sel.worldArrivalPos.z),
+
+            String xStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.x);
+            String yStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.y);
+            String zStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.z);
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.pos", xStr, yStr, zStr),
                     col1X + 6, boxY + 16, 0xFFFFFFFF);
 
             boolean slotAIsRed = ReturnCannonAssembler.isSlotARed(sel.direction, this.settings);
-            String redSide = slotAIsRed ? "Left" : "Right";
-            String blueSide = slotAIsRed ? "Right" : "Left";
+            String redSide = slotAIsRed
+                    ? StringUtils.translate("schematic_tiling.gui.cannon.side.left")
+                    : StringUtils.translate("schematic_tiling.gui.cannon.side.right");
+            String blueSide = slotAIsRed
+                    ? StringUtils.translate("schematic_tiling.gui.cannon.side.right")
+                    : StringUtils.translate("schematic_tiling.gui.cannon.side.left");
 
-            this.drawString(ctx, String.format(Locale.ROOT, "§6Stopper: §f[%d, %d, %d] §7(T+%d)",
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.stopper",
                             sel.catchBlockPos.getX(), sel.catchBlockPos.getY(), sel.catchBlockPos.getZ(), 1),
                     col1X + 6, boxY + 27, 0xFFFFAA00);
-            this.drawString(ctx, String.format(Locale.ROOT, "Total TNT: §e%d§r (Red: §c%d§r, Blue: §9%d§r)",
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.total_tnt",
                             sel.getTotalTNT(), sel.redTNT, sel.blueTNT),
                     col1X + 6, boxY + 38, 0xFFDDDDDD);
-            this.drawString(ctx, String.format(Locale.ROOT, "Dupers: Red %d (%s), Blue %d (%s)",
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.dupers",
                             sel.redDuperSize, redSide, sel.blueDuperSize, blueSide),
                     col1X + 6, boxY + 49, 0xFFDDDDDD);
-            this.drawString(ctx, String.format(Locale.ROOT, "Basket Rods: §6%s", sel.direction.name),
+
+            String dirName = StringUtils.translate("schematic_tiling.direction." + sel.direction.name().toLowerCase(Locale.ROOT));
+            this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.basket_rods", dirName),
                     col1X + 6, boxY + 60, 0xFFFFAA00);
         }
 
         // Solutions Header (Right Side)
         int resultsX = startX + 240;
-        this.drawString(ctx, "Solutions (" + this.solutions.size() + "):", resultsX, startY + 18, COLOR_WHITE);
-        this.drawString(ctx, "Sort by:", resultsX, startY + 184, 0xFFAAAAAA);
-        this.drawString(ctx, "Schematic Name:", resultsX, startY + 224, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.solutions_count", this.solutions.size()), resultsX, startY + 18, COLOR_WHITE);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.sort_by"), resultsX, startY + 184, 0xFFAAAAAA);
+        this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.schematic_name"), resultsX, startY + 224, 0xFFAAAAAA);
 
-        // Status message placed cleanly above action buttons and below checkboxes
+        // Status message placed cleanly below action buttons
         if (this.statusMessage != null) {
             int msgColor = this.statusIsError ? 0xFFFF5555 : 0xFF55FF55;
-            this.drawString(ctx, this.statusMessage, startX + 15, startY + 266, msgColor);
+            this.drawString(ctx, this.statusMessage, startX + 15, startY + 304, msgColor);
         }
     }
 
@@ -729,7 +799,7 @@ public class GuiReturnCannon extends GuiBase {
             this.placementOrigin = placementOrigin;
             this.placementName = placementName;
             this.sol = sol;
-            this.title = "Save Return Cannon Schematic";
+            this.title = StringUtils.translate("schematic_tiling.gui.cannon_save.title");
             this.defaultText = placementName;
             this.setTextFieldText(placementName);
             if (schematic != null) {

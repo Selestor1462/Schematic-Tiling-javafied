@@ -272,6 +272,38 @@ public class ReturnCannonAssembler {
     }
 
     /**
+     * Resolves double-chest connections dynamically based on actual adjacent neighbors in space.
+     * Ensures CHEST_TYPE is always correctly aligned with Minecraft's connected direction rule:
+     * partner at facing.getClockWise() -> LEFT, partner at facing.getCounterClockWise() -> RIGHT.
+     */
+    public static void fixDoubleChests(Map<BlockPos, BlockState> blocks) {
+        for (Map.Entry<BlockPos, BlockState> e : new ArrayList<>(blocks.entrySet())) {
+            BlockState state = e.getValue();
+            if (state.hasProperty(BlockStateProperties.CHEST_TYPE) && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+                Direction facing = state.getValue(BlockStateProperties.HORIZONTAL_FACING);
+                BlockPos pos = e.getKey();
+                BlockPos cwPos = pos.relative(facing.getClockWise());
+                BlockPos ccwPos = pos.relative(facing.getCounterClockWise());
+
+                BlockState cwState = blocks.get(cwPos);
+                BlockState ccwState = blocks.get(ccwPos);
+
+                if (cwState != null && cwState.getBlock() == state.getBlock()
+                        && cwState.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
+                        && cwState.getValue(BlockStateProperties.HORIZONTAL_FACING) == facing) {
+                    blocks.put(pos, state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.LEFT));
+                } else if (ccwState != null && ccwState.getBlock() == state.getBlock()
+                        && ccwState.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
+                        && ccwState.getValue(BlockStateProperties.HORIZONTAL_FACING) == facing) {
+                    blocks.put(pos, state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.RIGHT));
+                } else {
+                    blocks.put(pos, state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.SINGLE));
+                }
+            }
+        }
+    }
+
+    /**
      * Calculates the world placement origin (under the aligner lever at y=128)
      * given the pearl position (intersection of the 4 iron bars) and aligner rotation.
      */
@@ -513,13 +545,32 @@ public class ReturnCannonAssembler {
         return assembleCannon(alignerRotation, mirrorAligner ? MirrorMode.FRONT_BACK : MirrorMode.OFF, calcResult, settings, schematicName, cannonStartPos);
     }
 
-    public LitematicaSchematic assembleCannon(
+    public static BlockPos getLandingPos(CalculationResult calcResult, BlockPos cannonStartPos) {
+        int landingX = (int) Math.floor(calcResult.worldArrivalPos.x);
+        int landingZ = (int) Math.floor(calcResult.worldArrivalPos.z);
+        int landingY = (cannonStartPos != null && cannonStartPos.getY() < 150) ? cannonStartPos.getY() : 128;
+        return new BlockPos(landingX, landingY, landingZ);
+    }
+
+    public CompoundData assembleCannonNbt(
             Rotation alignerRotation,
             MirrorMode mirrorMode,
             CalculationResult calcResult,
             PearlCalculator.CannonSettings settings,
             String schematicName,
             BlockPos cannonStartPos
+    ) throws Exception {
+        return assembleCannonNbt(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, false);
+    }
+
+    public CompoundData assembleCannonNbt(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            BlockPos cannonStartPos,
+            boolean generatePowderSnowLanding
     ) throws Exception {
         if (mirrorMode == null) mirrorMode = MirrorMode.OFF;
 
@@ -549,14 +600,6 @@ public class ReturnCannonAssembler {
             }
             if (mirrorMode.flipZ) {
                 state = state.mirror(Mirror.LEFT_RIGHT);
-            }
-            if (mirrorMode != MirrorMode.OFF && state.hasProperty(BlockStateProperties.CHEST_TYPE)) {
-                ChestType ct = state.getValue(BlockStateProperties.CHEST_TYPE);
-                if (ct == ChestType.LEFT) {
-                    state = state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.RIGHT);
-                } else if (ct == ChestType.RIGHT) {
-                    state = state.setValue(BlockStateProperties.CHEST_TYPE, ChestType.LEFT);
-                }
             }
             state = state.rotate(alignerRotation);
             rotatedAligner.add(new BlockEntry(new BlockPos(wx, wy, wz), state));
@@ -745,6 +788,8 @@ public class ReturnCannonAssembler {
         for (BlockEntry b : transformedSlotADuper) allBlocks.put(b.pos, swapWaxedLightningRodIfNeeded(b.state));
         for (BlockEntry b : transformedSlotBDuper) allBlocks.put(b.pos, swapWaxedLightningRodIfNeeded(b.state));
 
+        fixDoubleChests(allBlocks);
+
         // 8. Build bounding box
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
@@ -858,6 +903,32 @@ public class ReturnCannonAssembler {
         );
         regionsData.put(catcherSubregionName, catcherTag);
 
+        BlockPos landingRelativePos = null;
+        if (generatePowderSnowLanding) {
+            BlockPos landingPos = getLandingPos(calcResult, cannonStartPos);
+            landingRelativePos = landingPos.subtract(placementOrigin);
+
+            NormalizedRegion landingRegion = new NormalizedRegion(0, 0, 0, 1, 2, 1);
+            landingRegion.getContainer().set(0, 0, 0, Blocks.POWDER_SNOW.defaultBlockState());
+            landingRegion.getContainer().set(0, 1, 0, Blocks.GRAY_CARPET.defaultBlockState());
+
+            CompoundData landingTag = new CompoundData();
+            landingTag.put("BlockStatePalette", landingRegion.getContainer().getPalette().writeToData());
+            landingTag.put("BlockStates", new LongArrayData(landingRegion.getContainer().getBackingLongArray()));
+            landingTag.put("TileEntities", new ListData());
+            landingTag.put("Entities", new ListData());
+            landingTag.put("Position", DataTypeUtils.createBlockPosTag(landingRelativePos));
+            landingTag.put("Size", DataTypeUtils.createBlockPosTag(new BlockPos(1, 2, 1)));
+
+            String landingSubregionName = String.format(Locale.ROOT,
+                    "Landing [%d, %d, %d]",
+                    landingPos.getX(),
+                    landingPos.getY(),
+                    landingPos.getZ()
+            );
+            regionsData.put(landingSubregionName, landingTag);
+        }
+
         CompoundData meta = new CompoundData();
         meta.putString("Name", schematicName);
         meta.putString("Author", "Return Cannon Generator");
@@ -875,13 +946,13 @@ public class ReturnCannonAssembler {
                 calcResult.worldArrivalPos.y,
                 calcResult.worldArrivalPos.z
         ));
-        meta.putInt("RegionCount", 2);
-        meta.putInt("TotalVolume", width * height * length + 1);
+        meta.putInt("RegionCount", generatePowderSnowLanding ? 3 : 2);
+        meta.putInt("TotalVolume", width * height * length + 1 + (generatePowderSnowLanding ? 2 : 0));
         int totalBlocks = 0;
         for (long count : mainRegion.getContainer().getBlockCounts()) {
             totalBlocks += (int) count;
         }
-        meta.putInt("TotalBlocks", totalBlocks + 1);
+        meta.putInt("TotalBlocks", totalBlocks + 1 + (generatePowderSnowLanding ? 2 : 0));
         meta.putInt("EntityCount", 0);
         meta.putInt("BlockEntityCount", mainRegion.getTileEntities().size());
         meta.putLong("TimeCreated", System.currentTimeMillis());
@@ -893,10 +964,42 @@ public class ReturnCannonAssembler {
         int allMaxX = Math.max(pos.getX() + width, catcherRelativePos.getX() + 1);
         int allMaxY = Math.max(pos.getY() + height, catcherRelativePos.getY() + 1);
         int allMaxZ = Math.max(pos.getZ() + length, catcherRelativePos.getZ() + 1);
+        if (landingRelativePos != null) {
+            allMinX = Math.min(allMinX, landingRelativePos.getX());
+            allMinY = Math.min(allMinY, landingRelativePos.getY());
+            allMinZ = Math.min(allMinZ, landingRelativePos.getZ());
+            allMaxX = Math.max(allMaxX, landingRelativePos.getX() + 1);
+            allMaxY = Math.max(allMaxY, landingRelativePos.getY() + 2);
+            allMaxZ = Math.max(allMaxZ, landingRelativePos.getZ() + 1);
+        }
         meta.put("EnclosingSize", DataTypeUtils.createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
 
         root.put("Metadata", meta);
         root.put("Regions", regionsData);
+        return root;
+    }
+
+    public LitematicaSchematic assembleCannon(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            BlockPos cannonStartPos
+    ) throws Exception {
+        return assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, false);
+    }
+
+    public LitematicaSchematic assembleCannon(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            BlockPos cannonStartPos,
+            boolean generatePowderSnowLanding
+    ) throws Exception {
+        CompoundData root = assembleCannonNbt(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding);
         Path defaultPath = this.gameDirectory != null
                 ? this.gameDirectory.resolve("schematics").resolve(schematicName + ".litematic")
                 : Path.of(schematicName + ".litematic");
@@ -911,7 +1014,7 @@ public class ReturnCannonAssembler {
             Path outputDirectory,
             BlockPos cannonStartPos
     ) throws Exception {
-        return assembleAndSaveCannon(alignerRotation, MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, cannonStartPos);
+        return assembleAndSaveCannon(alignerRotation, MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, cannonStartPos, false);
     }
 
     public GenerationResult assembleAndSaveCannon(
@@ -923,7 +1026,7 @@ public class ReturnCannonAssembler {
             Path outputDirectory,
             BlockPos cannonStartPos
     ) throws Exception {
-        return assembleAndSaveCannon(alignerRotation, mirrorAligner ? MirrorMode.FRONT_BACK : MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, cannonStartPos);
+        return assembleAndSaveCannon(alignerRotation, mirrorAligner ? MirrorMode.FRONT_BACK : MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, cannonStartPos, false);
     }
 
     public GenerationResult assembleAndSaveCannon(
@@ -935,7 +1038,20 @@ public class ReturnCannonAssembler {
             Path outputDirectory,
             BlockPos cannonStartPos
     ) throws Exception {
-        LitematicaSchematic schematic = assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos);
+        return assembleAndSaveCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, outputDirectory, cannonStartPos, false);
+    }
+
+    public GenerationResult assembleAndSaveCannon(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            Path outputDirectory,
+            BlockPos cannonStartPos,
+            boolean generatePowderSnowLanding
+    ) throws Exception {
+        LitematicaSchematic schematic = assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding);
         String safeName = FileNameUtils.generateSafeFileName(schematicName);
         Files.createDirectories(outputDirectory);
         schematic.writeToFile(outputDirectory, safeName, false);
@@ -950,6 +1066,123 @@ public class ReturnCannonAssembler {
             String schematicName,
             Path outputDirectory
     ) throws Exception {
-        return assembleAndSaveCannon(alignerRotation, MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, BlockPos.ZERO);
+        return assembleAndSaveCannon(alignerRotation, MirrorMode.OFF, calcResult, settings, schematicName, outputDirectory, BlockPos.ZERO, false);
+    }
+
+    public static class CannonEntry {
+        public final String name;
+        public final Rotation alignerRotation;
+        public final MirrorMode mirrorMode;
+        public final CalculationResult calcResult;
+        public final BlockPos cannonStartPos;
+        public final boolean generatePowderSnowLanding;
+
+        public CannonEntry(String name, Rotation alignerRotation, MirrorMode mirrorMode, CalculationResult calcResult, BlockPos cannonStartPos) {
+            this(name, alignerRotation, mirrorMode, calcResult, cannonStartPos, false);
+        }
+
+        public CannonEntry(String name, Rotation alignerRotation, MirrorMode mirrorMode, CalculationResult calcResult, BlockPos cannonStartPos, boolean generatePowderSnowLanding) {
+            this.name = name;
+            this.alignerRotation = alignerRotation;
+            this.mirrorMode = mirrorMode;
+            this.calcResult = calcResult;
+            this.cannonStartPos = cannonStartPos;
+            this.generatePowderSnowLanding = generatePowderSnowLanding;
+        }
+    }
+
+    public LitematicaSchematic assembleCombinedCannonSchematic(
+            List<CannonEntry> entries,
+            PearlCalculator.CannonSettings settings,
+            String combinedName
+    ) throws Exception {
+        CompoundData root = new CompoundData();
+        root.putInt("MinecraftDataVersion", LitematicaSchematic.MINECRAFT_DATA_VERSION);
+        root.putInt("Version", LitematicaSchematic.SCHEMATIC_VERSION);
+        root.putInt("SubVersion", LitematicaSchematic.SCHEMATIC_VERSION_SUB);
+
+        CompoundData regionsData = new CompoundData();
+        int totalBlocks = 0;
+        int totalVolume = 0;
+        int allMinX = Integer.MAX_VALUE, allMinY = Integer.MAX_VALUE, allMinZ = Integer.MAX_VALUE;
+        int allMaxX = Integer.MIN_VALUE, allMaxY = Integer.MIN_VALUE, allMaxZ = Integer.MIN_VALUE;
+
+        for (int i = 0; i < entries.size(); i++) {
+            CannonEntry entry = entries.get(i);
+            CompoundData singleRoot = assembleCannonNbt(
+                    entry.alignerRotation,
+                    entry.mirrorMode,
+                    entry.calcResult,
+                    settings,
+                    entry.name,
+                    entry.cannonStartPos,
+                    entry.generatePowderSnowLanding
+            );
+            CompoundData singleRegions = singleRoot.getCompound("Regions");
+            BlockPos placementOrigin = getSchematicOrigin(
+                    entry.cannonStartPos.getX(),
+                    entry.cannonStartPos.getZ(),
+                    entry.alignerRotation,
+                    entry.mirrorMode
+            );
+
+            if (singleRegions != null) {
+                for (String regName : singleRegions.getKeys()) {
+                    CompoundData regTag = singleRegions.getCompound(regName);
+                    BlockPos regPos = DataTypeUtils.readBlockPos(regTag.getCompound("Position"));
+                    BlockPos regSize = DataTypeUtils.readBlockPos(regTag.getCompound("Size"));
+
+                    // Convert relative to placementOrigin into absolute world coordinates (for [0, 0, 0] placement)
+                    BlockPos absPos = placementOrigin.offset(regPos);
+                    regTag.put("Position", DataTypeUtils.createBlockPosTag(absPos));
+
+                    String uniqueRegName = String.format(Locale.ROOT, "[%d] %s", i + 1, regName);
+                    regionsData.put(uniqueRegName, regTag);
+
+                    int w = Math.abs(regSize.getX());
+                    int h = Math.abs(regSize.getY());
+                    int l = Math.abs(regSize.getZ());
+                    totalVolume += w * h * l;
+
+                    allMinX = Math.min(allMinX, absPos.getX());
+                    allMinY = Math.min(allMinY, absPos.getY());
+                    allMinZ = Math.min(allMinZ, absPos.getZ());
+                    allMaxX = Math.max(allMaxX, absPos.getX() + w);
+                    allMaxY = Math.max(allMaxY, absPos.getY() + h);
+                    allMaxZ = Math.max(allMaxZ, absPos.getZ() + l);
+                }
+            }
+
+            CompoundData singleMeta = singleRoot.getCompound("Metadata");
+            if (singleMeta != null) {
+                totalBlocks += singleMeta.getInt("TotalBlocks");
+            }
+        }
+
+        CompoundData meta = new CompoundData();
+        meta.putString("Name", combinedName);
+        meta.putString("Author", "Return Cannon Debug Generator");
+        meta.putString("Description", "Combined test cannons with exact 1-block stopper blocks at absolute world coordinates (place at [0, 0, 0])");
+        meta.putInt("RegionCount", regionsData.size());
+        meta.putInt("TotalVolume", totalVolume);
+        meta.putInt("TotalBlocks", totalBlocks);
+        meta.putInt("EntityCount", 0);
+        meta.putInt("BlockEntityCount", 0);
+        meta.putLong("TimeCreated", System.currentTimeMillis());
+        meta.putLong("TimeModified", System.currentTimeMillis());
+
+        if (allMinX <= allMaxX) {
+            meta.put("EnclosingSize", DataTypeUtils.createVec3iTag(new Vec3i(allMaxX - allMinX, allMaxY - allMinY, allMaxZ - allMinZ)));
+        } else {
+            meta.put("EnclosingSize", DataTypeUtils.createVec3iTag(new Vec3i(1, 1, 1)));
+        }
+
+        root.put("Metadata", meta);
+        root.put("Regions", regionsData);
+
+        Path defaultPath = this.gameDirectory != null
+                ? this.gameDirectory.resolve("schematics").resolve(combinedName + ".litematic")
+                : Path.of(combinedName + ".litematic");
+        return new LitematicaSchematic(defaultPath, root, FileType.LITEMATICA_SCHEMATIC);
     }
 }

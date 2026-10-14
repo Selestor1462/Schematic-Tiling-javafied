@@ -578,9 +578,9 @@ public class PearlCalculator {
                             worldCatchY,
                             cannonStartPos.getZ() + catchPosRel.z
                     );
-                    int catchX = (catchMotRel.x < 0) ? (int) Math.floor(worldCatch.x) + 1 : (int) Math.floor(worldCatch.x);
+                    int catchX = (int) Math.floor(worldCatch.x);
                     int catchY = (int) Math.floor(worldCatch.y);
-                    int catchZ = (catchMotRel.z < 0) ? (int) Math.floor(worldCatch.z) + 1 : (int) Math.floor(worldCatch.z);
+                    int catchZ = (int) Math.floor(worldCatch.z);
                     BlockPos catchBlock = new BlockPos(catchX, catchY, catchZ);
 
                     // Stopper block and arrival point must be on or above the Nether roof (Y >= 128)
