@@ -218,6 +218,23 @@ public class ReturnCannonAssembler {
             MirrorMode[] vals = values();
             return vals[(this.ordinal() + 1) % vals.length];
         }
+
+        public Mirror toVanillaMirror() {
+            return switch (this) {
+                case OFF -> Mirror.NONE;
+                case FRONT_BACK -> Mirror.FRONT_BACK;
+                case LEFT_RIGHT -> Mirror.LEFT_RIGHT;
+            };
+        }
+
+        public static MirrorMode fromVanillaMirror(Mirror mirror) {
+            if (mirror == null) return OFF;
+            return switch (mirror) {
+                case NONE -> OFF;
+                case FRONT_BACK -> FRONT_BACK;
+                case LEFT_RIGHT -> LEFT_RIGHT;
+            };
+        }
     }
 
     /**
@@ -227,8 +244,8 @@ public class ReturnCannonAssembler {
      */
     public static boolean isSlotARed(PearlCalculator.Direction flightDirection, PearlCalculator.CannonSettings settings) {
         return switch (flightDirection) {
-            case NORTH, EAST -> true;  // Slot A = Red (Left, pushes Left),  Slot B = Blue (Right, pushes Right)
-            case SOUTH, WEST -> false; // Slot A = Blue (Left, pushes Left), Slot B = Red (Right, pushes Right)
+            case NORTH, EAST -> true;  // Slot A = Red (Left),  Slot B = Blue (Right)
+            case SOUTH, WEST -> false; // Slot A = Blue (Left), Slot B = Red (Right)
         };
     }
 
@@ -572,6 +589,19 @@ public class ReturnCannonAssembler {
             BlockPos cannonStartPos,
             boolean generatePowderSnowLanding
     ) throws Exception {
+        return assembleCannonNbt(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding, null);
+    }
+
+    public CompoundData assembleCannonNbt(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            BlockPos cannonStartPos,
+            boolean generatePowderSnowLanding,
+            CannonBlockPalette blockPalette
+    ) throws Exception {
         if (mirrorMode == null) mirrorMode = MirrorMode.OFF;
 
         // 1. Load Aligner
@@ -788,6 +818,12 @@ public class ReturnCannonAssembler {
         for (BlockEntry b : transformedSlotADuper) allBlocks.put(b.pos, swapWaxedLightningRodIfNeeded(b.state));
         for (BlockEntry b : transformedSlotBDuper) allBlocks.put(b.pos, swapWaxedLightningRodIfNeeded(b.state));
 
+        if (blockPalette != null) {
+            for (Map.Entry<BlockPos, BlockState> entry : allBlocks.entrySet()) {
+                entry.setValue(blockPalette.applyReplacement(entry.getValue()));
+            }
+        }
+
         fixDoubleChests(allBlocks);
 
         // 8. Build bounding box
@@ -999,7 +1035,20 @@ public class ReturnCannonAssembler {
             BlockPos cannonStartPos,
             boolean generatePowderSnowLanding
     ) throws Exception {
-        CompoundData root = assembleCannonNbt(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding);
+        return assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding, null);
+    }
+
+    public LitematicaSchematic assembleCannon(
+            Rotation alignerRotation,
+            MirrorMode mirrorMode,
+            CalculationResult calcResult,
+            PearlCalculator.CannonSettings settings,
+            String schematicName,
+            BlockPos cannonStartPos,
+            boolean generatePowderSnowLanding,
+            CannonBlockPalette blockPalette
+    ) throws Exception {
+        CompoundData root = assembleCannonNbt(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding, blockPalette);
         Path defaultPath = this.gameDirectory != null
                 ? this.gameDirectory.resolve("schematics").resolve(schematicName + ".litematic")
                 : Path.of(schematicName + ".litematic");
