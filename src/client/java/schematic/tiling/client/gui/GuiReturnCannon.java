@@ -909,7 +909,7 @@ public class GuiReturnCannon extends GuiBase {
                     : new BlockPos(0, 128, 0);
 
             int sx = playerPos.getX();
-            int sy = playerPos.getY();
+            int sy = PearlCalculator.NETHER_ROOF_MIN_Y;
             int sz = playerPos.getZ();
             BlockPos targetPos = new BlockPos(sx, sy, sz);
 
