@@ -4,10 +4,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
 
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.data.SchematicHolder;
@@ -33,6 +37,7 @@ import fi.dy.masa.malilib.util.FileNameUtils;
 import fi.dy.masa.malilib.util.InfoUtils;
 import fi.dy.masa.malilib.util.StringUtils;
 
+import schematic.tiling.cannon.CannonBlockPalette;
 import schematic.tiling.cannon.PearlCalculator;
 import schematic.tiling.cannon.PearlCalculator.CalculationResult;
 import schematic.tiling.cannon.PearlCalculator.CannonSettings;
@@ -43,6 +48,50 @@ public class GuiReturnCannon extends GuiBase {
 
     private static final int DIALOG_WIDTH = 490;
     private static final int DIALOG_HEIGHT = 330;
+
+    private static LitematicaSchematic sReferenceAlignerSchematic = null;
+
+    public static void removeReferenceAligner() {
+        try {
+            SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+            Set<LitematicaSchematic> schemsToRemove = new HashSet<>();
+
+            if (sReferenceAlignerSchematic != null) {
+                schemsToRemove.add(sReferenceAlignerSchematic);
+                sReferenceAlignerSchematic = null;
+            }
+
+            for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
+                if (p.getName() != null && (p.getName().equalsIgnoreCase("aligner_reference")
+                        || p.getName().equalsIgnoreCase("aligner"))) {
+                    if (p.getSchematic() != null) {
+                        schemsToRemove.add(p.getSchematic());
+                    }
+                }
+            }
+
+            for (LitematicaSchematic s : SchematicHolder.getInstance().getAllSchematics()) {
+                if (s != null && s.getMetadata() != null) {
+                    String name = s.getMetadata().getName();
+                    String author = s.getMetadata().getAuthor();
+                    if ("aligner".equalsIgnoreCase(name) && !"Return Cannon Generator".equalsIgnoreCase(author)) {
+                        schemsToRemove.add(s);
+                    }
+                }
+            }
+
+            for (LitematicaSchematic s : schemsToRemove) {
+                SchematicHolder.getInstance().removeSchematic(s);
+            }
+
+            for (SchematicPlacement p : new ArrayList<>(manager.getAllSchematicsPlacements())) {
+                if (p.getName() != null && (p.getName().equalsIgnoreCase("aligner_reference")
+                        || p.getName().equalsIgnoreCase("aligner"))) {
+                    manager.removeSchematicPlacement(p);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
 
     private final AreaSelection selection;
     private final GuiBase parent;
@@ -88,6 +137,10 @@ public class GuiReturnCannon extends GuiBase {
     private int page = 0;
     private static final int RESULTS_PER_PAGE = 5;
 
+    private BlockPos lastCalculatedStart = null;
+    private double lastCalculatedDestX = Double.NaN;
+    private double lastCalculatedDestZ = Double.NaN;
+
     // Sorting
     private SortMode sortMode = SortMode.DISTANCE;
     private boolean sortAscending = true;
@@ -121,6 +174,7 @@ public class GuiReturnCannon extends GuiBase {
     private static boolean lastStatusIsError = false;
     private static String lastSchemName = null;
     private static AreaSelection lastSelection = null;
+    private static final CannonBlockPalette blockPalette = new CannonBlockPalette();
 
     public GuiReturnCannon(AreaSelection selection, GuiBase parent) {
         this.selection = selection;
@@ -137,6 +191,29 @@ public class GuiReturnCannon extends GuiBase {
         Path gameDir = DataManager.getSchematicsBaseDirectory().getParent();
         if (gameDir == null) gameDir = Path.of(".");
         this.settings = PearlCalculator.loadSettings(gameDir);
+
+        // Check if an aligner placement already exists in Litematica
+        if (lastSX == null) {
+            try {
+                SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+                SchematicPlacement selected = manager.getSelectedSchematicPlacement();
+                if (selected == null) {
+                    for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
+                        if (p.getName() != null && p.getName().toLowerCase(Locale.ROOT).contains("aligner")) {
+                            selected = p;
+                            break;
+                        }
+                    }
+                }
+                if (selected != null && selected.getName() != null && selected.getName().toLowerCase(Locale.ROOT).contains("aligner")) {
+                    BlockPos origin = selected.getOrigin();
+                    lastSX = String.valueOf(origin.getX());
+                    lastSZ = String.valueOf(origin.getZ());
+                    lastAlignerFacing = PearlCalculator.Direction.fromAlignerRotation(selected.getRotation());
+                    lastMirrorMode = ReturnCannonAssembler.MirrorMode.fromVanillaMirror(selected.getMirror());
+                }
+            } catch (Throwable ignored) {}
+        }
 
         // Restore static state
         this.alignerFacing = lastAlignerFacing;
@@ -321,9 +398,10 @@ public class GuiReturnCannon extends GuiBase {
                 this.saveGuiState();
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.start_set_player", playerPos.getX(), playerPos.getZ());
                 this.statusIsError = false;
+                this.runCalculation();
             }
         });
-        y += 22;
+        y += 21;
 
         // --- Destination Inputs ---
         this.destXField = new GuiTextFieldDouble(col1X + 32, y, 54, 18, this.font);
@@ -345,9 +423,10 @@ public class GuiReturnCannon extends GuiBase {
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.dest_set_player",
                         String.format(Locale.ROOT, "%.1f", px), String.format(Locale.ROOT, "%.1f", pz));
                 this.statusIsError = false;
+                this.runCalculation();
             }
         });
-        y += 22;
+        y += 21;
 
         // --- Aligner Facing & Mirror ---
         String facingName = StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT));
@@ -366,7 +445,21 @@ public class GuiReturnCannon extends GuiBase {
             this.mirrorAlignerBtn.setDisplayString(this.getMirrorBtnLabel());
             this.saveGuiState();
         });
-        y += 22;
+        y += 21;
+
+        // --- Aligner Placement in Litematica ---
+        ButtonGeneric placeAlignerBtn = new ButtonGeneric(col1X, y, 101, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.place_aligner"));
+        placeAlignerBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.place_aligner_title"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.place_aligner_desc"));
+        this.addButton(placeAlignerBtn, (btn, mouse) -> this.placeAlignerSchematic());
+
+        ButtonGeneric fromPlacementBtn = new ButtonGeneric(col1X + 105, y, 101, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.from_placement"));
+        fromPlacementBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.from_placement_title"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.from_placement_desc"));
+        this.addButton(fromPlacementBtn, (btn, mouse) -> this.syncFromPlacement());
+        y += 21;
 
         // --- Max TNT & Ticks ---
         this.maxTntField = new GuiTextFieldInteger(col1X + 46, y, 48, 18, this.font);
@@ -376,13 +469,13 @@ public class GuiReturnCannon extends GuiBase {
         this.maxTicksField = new GuiTextFieldInteger(col1X + 138, y, 48, 18, this.font);
         this.maxTicksField.setTextWrapper(curMaxTicks);
         this.addTextField(this.maxTicksField, null);
-        y += 22;
+        y += 21;
 
         // --- Max Dist ---
         this.maxDistField = new GuiTextFieldDouble(col1X + 50, y, 54, 18, this.font);
         this.maxDistField.setTextWrapper(curMaxDist);
         this.addTextField(this.maxDistField, null);
-        y += 22;
+        y += 21;
 
         // --- Calculate Button ---
         ButtonGeneric calcBtn = new ButtonGeneric(col1X, y, 206, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.calculate_solutions"));
@@ -507,9 +600,15 @@ public class GuiReturnCannon extends GuiBase {
 
         int btnY = startY + 276;
 
-        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, btnY, 110, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.generate_schem"));
+        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, btnY, 90, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.generate_schem"));
         assembleBtn.setEnabled(hasSol);
         this.addButton(assembleBtn, (btn, mouse) -> this.generateSchematic());
+
+        ButtonRgbPalette paletteBtn = new ButtonRgbPalette(startX + 107, btnY, 20, 20, blockPalette);
+        this.addButton(paletteBtn, (btn, mouse) -> {
+            this.saveGuiState();
+            GuiBase.openGui(new GuiCannonBlockPalette(this, blockPalette));
+        });
 
         ButtonGeneric copyLandingBtn = new ButtonGeneric(startX + 130, btnY, 80, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_landing"));
         copyLandingBtn.setEnabled(hasSol);
@@ -577,6 +676,9 @@ public class GuiReturnCannon extends GuiBase {
             this.solutions = PearlCalculator.calculateSolutions(
                     cannonStart, dx, dz, this.settings, maxTicks, maxDist
             );
+            this.lastCalculatedStart = cannonStart;
+            this.lastCalculatedDestX = dx;
+            this.lastCalculatedDestZ = dz;
 
             this.sortSolutions();
             this.page = 0;
@@ -622,12 +724,34 @@ public class GuiReturnCannon extends GuiBase {
     }
 
     private void generateSchematic() {
-        if (this.selectedSolutionIndex < 0 || this.selectedSolutionIndex >= this.solutions.size()) {
-            return;
-        }
-
-        CalculationResult sol = this.solutions.get(this.selectedSolutionIndex);
         try {
+            int sx = Integer.parseInt(this.startXField.getTextWrapper().trim());
+            int sy = this.settings.getStartY();
+            int sz = Integer.parseInt(this.startZField.getTextWrapper().trim());
+            BlockPos cannonStart = new BlockPos(sx, sy, sz);
+
+            double dx = Double.parseDouble(this.destXField.getTextWrapper().trim());
+            double dz = Double.parseDouble(this.destZField.getTextWrapper().trim());
+
+            if (this.lastCalculatedStart == null || !this.lastCalculatedStart.equals(cannonStart)
+                    || Double.isNaN(this.lastCalculatedDestX) || Math.abs(this.lastCalculatedDestX - dx) > 1e-4
+                    || Double.isNaN(this.lastCalculatedDestZ) || Math.abs(this.lastCalculatedDestZ - dz) > 1e-4) {
+                int prevSel = this.selectedSolutionIndex;
+                this.runCalculation();
+                if (prevSel >= 0 && prevSel < this.solutions.size()) {
+                    this.selectedSolutionIndex = prevSel;
+                }
+            }
+
+            if (this.solutions.isEmpty() || this.selectedSolutionIndex < 0 || this.selectedSolutionIndex >= this.solutions.size()) {
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_solutions");
+                this.statusIsError = true;
+                this.initGui();
+                return;
+            }
+
+            CalculationResult sol = this.solutions.get(this.selectedSolutionIndex);
+
             String rawName = (this.schematicNameField != null) ? this.schematicNameField.getTextWrapper().trim() : "";
             if (rawName.isEmpty()) {
                 String selName = (this.selection != null && this.selection.getName() != null) ? this.selection.getName() : "cannon";
@@ -635,16 +759,15 @@ public class GuiReturnCannon extends GuiBase {
             }
             String schemName = FileNameUtils.generateSafeFileName(rawName);
 
-            int sx = Integer.parseInt(this.startXField.getTextWrapper().trim());
-            int sy = this.settings.getStartY();
-            int sz = Integer.parseInt(this.startZField.getTextWrapper().trim());
-            BlockPos cannonStart = new BlockPos(sx, sy, sz);
             BlockPos placementOrigin = ReturnCannonAssembler.getSchematicOrigin(sx, sz, this.alignerFacing.getAlignerRotation(), this.mirrorMode);
 
             Path gameDir = DataManager.getSchematicsBaseDirectory().getParent();
             if (gameDir == null) gameDir = Path.of(".");
 
             ReturnCannonAssembler assembler = new ReturnCannonAssembler(gameDir);
+
+            // Delete reference aligner placement and unload it from memory when player generates cannon
+            removeReferenceAligner();
 
             // Assembles cannon with main Cannon subregion + 1-block Catcher subregion (+ optional Landing subregion)
             boolean genSnow = this.checkboxPowderSnow != null && this.checkboxPowderSnow.isChecked();
@@ -655,7 +778,8 @@ public class GuiReturnCannon extends GuiBase {
                     this.settings,
                     schemName,
                     cannonStart,
-                    genSnow
+                    genSnow,
+                    blockPalette
             );
 
             this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.save_to_finish");
@@ -711,35 +835,36 @@ public class GuiReturnCannon extends GuiBase {
 
         // Labels matching field Y offsets
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.start"), col1X, y + 5, 0xFFAAAAAA);
-        y += 22;
+        y += 21;
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.dest"), col1X, y + 5, 0xFFAAAAAA);
-        y += 22;
+        y += 21;
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.aligner"), col1X, y + 5, 0xFFAAAAAA);
-        y += 22;
+        y += 21;
+        y += 21; // Skips Aligner placement buttons row
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.max_tnt"), col1X, y + 5, 0xFFAAAAAA);
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.ticks"), col1X + 104, y + 5, 0xFFAAAAAA);
-        y += 22;
+        y += 21;
         this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.label.max_dist"), col1X, y + 5, 0xFFAAAAAA);
-        y += 22; // Skips to Calculate button (startY + 140)
-        y += 24; // Skips to Details box (startY + 164)
+        y += 21; // Skips to Calculate button (startY + 156)
+        y += 23; // Skips to Details box (startY + 179)
 
         // Details of selected solution (Left Side under inputs)
         if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
             CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
             int boxY = y;
             int boxW = 206;
-            int boxH = 76;
+            int boxH = 62;
             RenderUtils.drawOutlinedBox(ctx, col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
 
             String distStr = String.format(Locale.ROOT, "%.2f", sel.distance);
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.landing", sel.tick, distStr),
-                    col1X + 6, boxY + 5, 0xFFFFFF55);
+                    col1X + 6, boxY + 3, 0xFFFFFF55);
 
             String xStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.x);
             String yStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.y);
             String zStr = String.format(Locale.ROOT, "%.2f", sel.worldArrivalPos.z);
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.pos", xStr, yStr, zStr),
-                    col1X + 6, boxY + 16, 0xFFFFFFFF);
+                    col1X + 6, boxY + 13, 0xFFFFFFFF);
 
             boolean slotAIsRed = ReturnCannonAssembler.isSlotARed(sel.direction, this.settings);
             String redSide = slotAIsRed
@@ -750,18 +875,18 @@ public class GuiReturnCannon extends GuiBase {
                     : StringUtils.translate("schematic_tiling.gui.cannon.side.left");
 
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.stopper",
-                            sel.catchBlockPos.getX(), sel.catchBlockPos.getY(), sel.catchBlockPos.getZ(), 1),
-                    col1X + 6, boxY + 27, 0xFFFFAA00);
+                            sel.catchBlockPos.getX(), sel.catchBlockPos.getY(), sel.catchBlockPos.getZ(), sel.tick),
+                    col1X + 6, boxY + 23, 0xFFFFAA00);
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.total_tnt",
                             sel.getTotalTNT(), sel.redTNT, sel.blueTNT),
-                    col1X + 6, boxY + 38, 0xFFDDDDDD);
+                    col1X + 6, boxY + 33, 0xFFDDDDDD);
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.dupers",
                             sel.redDuperSize, redSide, sel.blueDuperSize, blueSide),
-                    col1X + 6, boxY + 49, 0xFFDDDDDD);
+                    col1X + 6, boxY + 43, 0xFFDDDDDD);
 
             String dirName = StringUtils.translate("schematic_tiling.direction." + sel.direction.name().toLowerCase(Locale.ROOT));
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.basket_rods", dirName),
-                    col1X + 6, boxY + 60, 0xFFFFAA00);
+                    col1X + 6, boxY + 53, 0xFFFFAA00);
         }
 
         // Solutions Header (Right Side)
@@ -775,6 +900,124 @@ public class GuiReturnCannon extends GuiBase {
             int msgColor = this.statusIsError ? 0xFFFF5555 : 0xFF55FF55;
             this.drawString(ctx, this.statusMessage, startX + 15, startY + 304, msgColor);
         }
+    }
+
+    private void placeAlignerSchematic() {
+        try {
+            BlockPos playerPos = (this.mc != null && this.mc.player != null)
+                    ? this.mc.player.blockPosition()
+                    : new BlockPos(0, 128, 0);
+
+            int sx = playerPos.getX();
+            int sy = playerPos.getY();
+            int sz = playerPos.getZ();
+            BlockPos targetPos = new BlockPos(sx, sy, sz);
+
+            if (this.startXField != null) this.startXField.setTextWrapper(String.valueOf(sx));
+            if (this.startZField != null) this.startZField.setTextWrapper(String.valueOf(sz));
+
+            Path schemDir = DataManager.getSchematicsBaseDirectory();
+            Path gameDir = schemDir.getParent() != null ? schemDir.getParent() : Path.of(".");
+            ReturnCannonAssembler assembler = new ReturnCannonAssembler(gameDir);
+            LitematicaSchematic alignerSchem = assembler.loadComponentSchematic("aligner.litematic");
+
+            SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+            SchematicPlacement existing = null;
+            for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
+                if (p.getName() != null && (p.getName().equalsIgnoreCase("aligner_reference") || p.getName().equalsIgnoreCase("aligner"))) {
+                    existing = p;
+                    break;
+                }
+            }
+
+            sReferenceAlignerSchematic = alignerSchem;
+            SchematicHolder.getInstance().addSchematic(alignerSchem, false);
+
+            if (existing != null) {
+                existing.setOrigin(targetPos, null);
+                existing.setRotation(this.alignerFacing.getAlignerRotation(), null);
+                existing.setMirror(this.mirrorMode.toVanillaMirror(), null);
+                existing.setEnabled(true);
+                existing.setRenderSchematic(true);
+                existing.setShouldBeSaved(false);
+                manager.setSelectedSchematicPlacement(existing);
+            } else {
+                SchematicPlacement placement = SchematicPlacement.createFor(
+                        alignerSchem, targetPos, "aligner_reference", true, true
+                );
+                placement.setRotation(this.alignerFacing.getAlignerRotation(), null);
+                placement.setMirror(this.mirrorMode.toVanillaMirror(), null);
+                placement.setShouldBeSaved(false);
+                manager.addSchematicPlacement(placement, true);
+                manager.setSelectedSchematicPlacement(placement);
+            }
+
+            this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.aligner_placed", sx, sy, sz);
+            this.statusIsError = false;
+            String savedMsg = this.statusMessage;
+            this.runCalculation();
+            this.statusMessage = savedMsg;
+            this.statusIsError = false;
+            return;
+        } catch (Throwable t) {
+            this.statusMessage = "Place Aligner error: " + t.getMessage();
+            this.statusIsError = true;
+        }
+        this.saveGuiState();
+        this.initGui();
+    }
+
+    private void syncFromPlacement() {
+        try {
+            SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+            SchematicPlacement placement = manager.getSelectedSchematicPlacement();
+            if (placement == null) {
+                for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
+                    if (p.getName() != null && (p.getName().toLowerCase(Locale.ROOT).contains("aligner")
+                            || p.getName().toLowerCase(Locale.ROOT).contains("cannon"))) {
+                        placement = p;
+                        break;
+                    }
+                }
+            }
+
+            if (placement == null) {
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_placement_selected");
+                this.statusIsError = true;
+                return;
+            }
+
+            BlockPos origin = placement.getOrigin();
+            this.startXField.setTextWrapper(String.valueOf(origin.getX()));
+            this.startZField.setTextWrapper(String.valueOf(origin.getZ()));
+
+            Rotation rot = placement.getRotation();
+            this.alignerFacing = PearlCalculator.Direction.fromAlignerRotation(rot);
+            if (this.alignerFacingBtn != null) {
+                this.alignerFacingBtn.setDisplayString(StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT)));
+            }
+
+            Mirror mirror = placement.getMirror();
+            this.mirrorMode = ReturnCannonAssembler.MirrorMode.fromVanillaMirror(mirror);
+            if (this.mirrorAlignerBtn != null) {
+                this.mirrorAlignerBtn.setDisplayString(this.getMirrorBtnLabel());
+            }
+
+            String dirName = StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT));
+            this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.synced_from_placement",
+                    origin.getX(), origin.getZ(), dirName, this.getMirrorBtnLabel());
+            this.statusIsError = false;
+            String savedMsg = this.statusMessage;
+            this.runCalculation();
+            this.statusMessage = savedMsg;
+            this.statusIsError = false;
+            return;
+        } catch (Throwable t) {
+            this.statusMessage = "Sync error: " + t.getMessage();
+            this.statusIsError = true;
+        }
+        this.saveGuiState();
+        this.initGui();
     }
 
     private class GuiReturnCannonSave extends GuiSchematicSave {
@@ -845,6 +1088,8 @@ public class GuiReturnCannon extends GuiBase {
                             }
                         }
 
+                        removeReferenceAligner();
+
                         if (this.createPlacement) {
                             String name = targetSchem.getFile() != null ?
                                     FileNameUtils.getFileNameWithoutExtension(targetSchem.getFile().getFileName().toString()) :
@@ -867,6 +1112,74 @@ public class GuiReturnCannon extends GuiBase {
                 };
             }
             return originalListener;
+        }
+    }
+
+    public static class ButtonRgbPalette extends ButtonGeneric {
+        private final CannonBlockPalette palette;
+
+        public ButtonRgbPalette(int x, int y, int width, int height, CannonBlockPalette palette) {
+            super(x, y, width, height, "");
+            this.palette = palette;
+        }
+
+        @Override
+        public void render(GuiGraphics ctx, int mouseX, int mouseY, boolean unused) {
+            this.setDisplayString("");
+
+            this.clearHoverStrings();
+            this.hoverStrings.add("\u00a7e\u00a7l" + StringUtils.translate("schematic_tiling.gui.cannon.palette.title"));
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.glass") + ": \u00a7f" + this.palette.getSelectedGlass().getName().getString());
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.solid") + ": \u00a7f" + this.palette.getSelectedSolid().getName().getString());
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.stairs") + ": \u00a7f" + this.palette.getSelectedStairs().getName().getString());
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.leaves") + ": \u00a7f" + this.palette.getSelectedLeaves().getName().getString());
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.terracotta") + ": \u00a7f" + this.palette.getSelectedTerracotta().getName().getString());
+            this.hoverStrings.add("\u00a77" + StringUtils.translate("schematic_tiling.gui.cannon.palette.cat.nether_wood") + ": \u00a7f" + this.palette.getSelectedNetherWood().displayName);
+            this.hoverStrings.add("\u00a78" + StringUtils.translate("schematic_tiling.gui.cannon.palette.hover_hint"));
+
+            super.render(ctx, mouseX, mouseY, unused);
+            if (!this.visible) return;
+
+            // Draw RGB rainbow bar along bottom of button
+            int barY = this.y + this.height - 3;
+            int barX = this.x + 2;
+            int totalW = this.width - 4;
+            int[] rgbColors = new int[] {
+                0xFFFF3B30, // Red
+                0xFFFF9500, // Orange
+                0xFFFFCC00, // Yellow
+                0xFF34C759, // Green
+                0xFF00C7BE, // Teal
+                0xFF007AFF, // Blue
+                0xFF5856D6, // Indigo
+                0xFFAF52DE  // Purple
+            };
+            float segW = (float) totalW / rgbColors.length;
+            for (int i = 0; i < rgbColors.length; i++) {
+                int segX1 = barX + Math.round(i * segW);
+                int segX2 = barX + Math.round((i + 1) * segW);
+                RenderUtils.drawRect(ctx, segX1, barY, segX2 - segX1, 2, rgbColors[i]);
+            }
+
+            // Draw artist palette icon centered in button
+            int iconX = this.x + (this.width - 12) / 2;
+            int iconY = this.y + (this.height - 12) / 2 - 1;
+            // Palette body
+            RenderUtils.drawRect(ctx, iconX + 1, iconY, 10, 11, 0xFFD8A868);
+            RenderUtils.drawRect(ctx, iconX, iconY + 1, 12, 9, 0xFFD8A868);
+            // Palette outline
+            RenderUtils.drawRect(ctx, iconX + 1, iconY, 10, 1, 0xFF553311);
+            RenderUtils.drawRect(ctx, iconX + 1, iconY + 10, 10, 1, 0xFF553311);
+            RenderUtils.drawRect(ctx, iconX, iconY + 1, 1, 9, 0xFF553311);
+            RenderUtils.drawRect(ctx, iconX + 11, iconY + 1, 1, 9, 0xFF553311);
+            // Thumb hole
+            RenderUtils.drawRect(ctx, iconX + 2, iconY + 5, 2, 2, 0xFF222222);
+            // Paint dabs (Red, Yellow, Green, Cyan, Purple)
+            RenderUtils.drawRect(ctx, iconX + 2, iconY + 2, 2, 2, 0xFFFF2222);
+            RenderUtils.drawRect(ctx, iconX + 6, iconY + 1, 2, 2, 0xFFFFDD00);
+            RenderUtils.drawRect(ctx, iconX + 8, iconY + 3, 2, 2, 0xFF22CC44);
+            RenderUtils.drawRect(ctx, iconX + 8, iconY + 6, 2, 2, 0xFF00BBFF);
+            RenderUtils.drawRect(ctx, iconX + 5, iconY + 8, 2, 2, 0xFFAA22EE);
         }
     }
 }
