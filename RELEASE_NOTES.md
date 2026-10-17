@@ -1,1 +1,5 @@
-Release 1.2.1 includes bug fixes and adds powder snow placement at destination.
+Release 1.2.2 includes some more pearl bugfixes and improvements:
+
+- Colour change option
+- Parse the placement from an aligner schem
+- Bugfixes
