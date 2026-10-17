@@ -8,9 +8,11 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 
@@ -578,7 +580,7 @@ public class GuiReturnCannon extends GuiBase {
         this.addTextField(this.schematicNameField, null);
 
         // --- Bottom Area: Checkboxes & Actions ---
-        int bottomY = startY + 244;
+        int bottomY = startY + 246;
         boolean loadMem = (this.checkboxLoadToMemory != null) ? this.checkboxLoadToMemory.isChecked() : lastLoadToMemory;
         boolean createPlace = (this.checkboxCreatePlacement != null) ? this.checkboxCreatePlacement.isChecked() : lastCreatePlacement;
         boolean genSnow = (this.checkboxPowderSnow != null) ? this.checkboxPowderSnow.isChecked() : lastGeneratePowderSnow;
@@ -591,7 +593,7 @@ public class GuiReturnCannon extends GuiBase {
         this.checkboxCreatePlacement.setChecked(createPlace, false);
         this.addWidget(this.checkboxCreatePlacement);
 
-        this.checkboxPowderSnow = new WidgetCheckBox(startX + 15, bottomY + 15, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.powder_snow"));
+        this.checkboxPowderSnow = new WidgetCheckBox(startX + 15, bottomY + 14, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.powder_snow"));
         this.checkboxPowderSnow.setChecked(genSnow, false);
         this.addWidget(this.checkboxPowderSnow);
 
@@ -848,7 +850,7 @@ public class GuiReturnCannon extends GuiBase {
             CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
             int boxY = y;
             int boxW = 206;
-            int boxH = 76;
+            int boxH = 64;
             RenderUtils.drawOutlinedBox(col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
 
             String distStr = String.format(Locale.ROOT, "%.2f", sel.distance);
@@ -915,6 +917,16 @@ public class GuiReturnCannon extends GuiBase {
             Path gameDir = (schemDir != null && schemDir.getParentFile() != null) ? schemDir.getParentFile().toPath() : Path.of(".");
             ReturnCannonAssembler assembler = new ReturnCannonAssembler(gameDir);
             LitematicaSchematic alignerSchem = assembler.loadComponentSchematic("aligner.litematic");
+            if (alignerSchem != null) {
+                for (String regionName : alignerSchem.getAreas().keySet()) {
+                    Map<BlockPos, CompoundTag> teMap = alignerSchem.getBlockEntityMapForRegion(regionName);
+                    if (teMap != null) {
+                        for (CompoundTag tag : teMap.values()) {
+                            ReturnCannonAssembler.normalizeSignTag(tag);
+                        }
+                    }
+                }
+            }
 
             SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
             SchematicPlacement existing = null;
@@ -1153,28 +1165,28 @@ public class GuiReturnCannon extends GuiBase {
             for (int i = 0; i < rgbColors.length; i++) {
                 int segX1 = barX + Math.round(i * segW);
                 int segX2 = barX + Math.round((i + 1) * segW);
-                RenderUtils.drawRect(segX1, barY, segX2 - segX1, 2, rgbColors[i]);
+                ctx.fill(segX1, barY, segX2, barY + 2, rgbColors[i]);
             }
 
             // Draw artist palette icon centered in button
             int iconX = this.x + (this.width - 12) / 2;
             int iconY = this.y + (this.height - 12) / 2 - 1;
             // Palette body
-            RenderUtils.drawRect(iconX + 1, iconY, 10, 11, 0xFFD8A868);
-            RenderUtils.drawRect(iconX, iconY + 1, 12, 9, 0xFFD8A868);
+            ctx.fill(iconX + 1, iconY, iconX + 11, iconY + 11, 0xFFD8A868);
+            ctx.fill(iconX, iconY + 1, iconX + 12, iconY + 10, 0xFFD8A868);
             // Palette outline
-            RenderUtils.drawRect(iconX + 1, iconY, 10, 1, 0xFF553311);
-            RenderUtils.drawRect(iconX + 1, iconY + 10, 10, 1, 0xFF553311);
-            RenderUtils.drawRect(iconX, iconY + 1, 1, 9, 0xFF553311);
-            RenderUtils.drawRect(iconX + 11, iconY + 1, 1, 9, 0xFF553311);
+            ctx.fill(iconX + 1, iconY, iconX + 11, iconY + 1, 0xFF553311);
+            ctx.fill(iconX + 1, iconY + 10, iconX + 11, iconY + 11, 0xFF553311);
+            ctx.fill(iconX, iconY + 1, iconX + 1, iconY + 10, 0xFF553311);
+            ctx.fill(iconX + 11, iconY + 1, iconX + 12, iconY + 10, 0xFF553311);
             // Thumb hole
-            RenderUtils.drawRect(iconX + 2, iconY + 5, 2, 2, 0xFF222222);
+            ctx.fill(iconX + 2, iconY + 5, iconX + 4, iconY + 7, 0xFF222222);
             // Paint dabs (Red, Yellow, Green, Cyan, Purple)
-            RenderUtils.drawRect(iconX + 2, iconY + 2, 2, 2, 0xFFFF2222);
-            RenderUtils.drawRect(iconX + 6, iconY + 1, 2, 2, 0xFFFFDD00);
-            RenderUtils.drawRect(iconX + 8, iconY + 3, 2, 2, 0xFF22CC44);
-            RenderUtils.drawRect(iconX + 8, iconY + 6, 2, 2, 0xFF00BBFF);
-            RenderUtils.drawRect(iconX + 5, iconY + 8, 2, 2, 0xFFAA22EE);
+            ctx.fill(iconX + 2, iconY + 2, iconX + 4, iconY + 4, 0xFFFF2222);
+            ctx.fill(iconX + 6, iconY + 1, iconX + 8, iconY + 3, 0xFFFFDD00);
+            ctx.fill(iconX + 8, iconY + 3, iconX + 10, iconY + 5, 0xFF22CC44);
+            ctx.fill(iconX + 8, iconY + 6, iconX + 10, iconY + 8, 0xFF00BBFF);
+            ctx.fill(iconX + 5, iconY + 8, iconX + 7, iconY + 10, 0xFFAA22EE);
         }
     }
 }

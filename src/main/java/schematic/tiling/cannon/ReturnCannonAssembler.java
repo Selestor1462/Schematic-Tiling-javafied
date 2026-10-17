@@ -30,6 +30,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.LongArrayTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.StringTag;
 
 import schematic.tiling.cannon.PearlCalculator.CalculationResult;
 import schematic.tiling.core.NormalizedRegion;
@@ -170,11 +171,60 @@ public class ReturnCannonAssembler {
             Map<BlockPos, CompoundTag> teMap = schematic.getBlockEntityMapForRegion(regionName);
             if (teMap != null) {
                 for (Map.Entry<BlockPos, CompoundTag> e : teMap.entrySet()) {
-                    result.add(new TileEntityEntry(e.getKey(), e.getValue().copy()));
+                    CompoundTag tag = e.getValue().copy();
+                    normalizeSignTag(tag);
+                    result.add(new TileEntityEntry(e.getKey(), tag));
                 }
             }
         }
         return result;
+    }
+
+    public static void normalizeSignTag(CompoundTag tag) {
+        if (tag == null) return;
+        String id = tag.getString("id");
+        if (id != null && (id.equals("minecraft:sign") || id.equals("minecraft:hanging_sign") || id.endsWith("_sign"))) {
+            normalizeSignSide(tag, "front_text");
+            normalizeSignSide(tag, "back_text");
+            if (tag.contains("front_text")) {
+                CompoundTag front = tag.getCompound("front_text");
+                if (front.contains("messages")) {
+                    ListTag list = front.getList("messages", 8);
+                    for (int i = 0; i < 4; i++) {
+                        String line = i < list.size() ? list.getString(i) : "{\"text\":\"\"}";
+                        tag.putString("Text" + (i + 1), line);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void normalizeSignSide(CompoundTag tag, String sideKey) {
+        if (tag.contains(sideKey)) {
+            CompoundTag sideTag = tag.getCompound(sideKey);
+            if (sideTag.contains("messages")) {
+                ListTag list = sideTag.getList("messages", 8);
+                ListTag newList = new ListTag();
+                for (int i = 0; i < 4; i++) {
+                    String str = i < list.size() ? list.getString(i) : "";
+                    newList.add(StringTag.valueOf(toJsonComponentString(str)));
+                }
+                sideTag.put("messages", newList);
+            }
+        }
+    }
+
+    private static String toJsonComponentString(String str) {
+        if (str == null || str.isEmpty()) {
+            return "{\"text\":\"\"}";
+        }
+        String trimmed = str.trim();
+        if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+            (trimmed.startsWith("\"") && trimmed.endsWith("\""))) {
+            return str;
+        }
+        String escaped = str.replace("\\", "\\\\").replace("\"", "\\\"");
+        return "{\"text\":\"" + escaped + "\"}";
     }
 
     /**
