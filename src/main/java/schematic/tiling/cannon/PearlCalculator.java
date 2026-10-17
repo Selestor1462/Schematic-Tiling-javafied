@@ -50,6 +50,16 @@ public class PearlCalculator {
             };
         }
 
+        public static Direction fromAlignerRotation(Rotation rot) {
+            if (rot == null) return NORTH;
+            return switch (rot) {
+                case NONE -> NORTH;
+                case CLOCKWISE_90 -> EAST;
+                case CLOCKWISE_180 -> SOUTH;
+                case COUNTERCLOCKWISE_90 -> WEST;
+            };
+        }
+
         public Rotation getBasketRotation() {
             return this.rotation;
         }
@@ -578,10 +588,7 @@ public class PearlCalculator {
                             worldCatchY,
                             cannonStartPos.getZ() + catchPosRel.z
                     );
-                    int catchX = (int) Math.floor(worldCatch.x);
-                    int catchY = (int) Math.floor(worldCatch.y);
-                    int catchZ = (int) Math.floor(worldCatch.z);
-                    BlockPos catchBlock = new BlockPos(catchX, catchY, catchZ);
+                    BlockPos catchBlock = calculateFirstIntersectedVoxel(worldArrival, worldCatch);
 
                     // Stopper block and arrival point must be on or above the Nether roof (Y >= 128)
                     if (catchBlock.getY() < NETHER_ROOF_MIN_Y || worldArrival.y < NETHER_ROOF_MIN_Y) {
@@ -620,6 +627,92 @@ public class PearlCalculator {
                 .thenComparingInt(a -> a.tick));
 
         return sorted;
+    }
+
+    /**
+     * Calculates the stopper block position along the T -> T+1 raycast.
+     * Uses 3D DDA traversal to find the voxels traversed during the tick.
+     * If the pearl only penetrates marginally into the end voxel (< 0.5 blocks),
+     * the predecessor voxel is selected to ensure the stopper block reliably intercepts the pearl.
+     */
+    public static BlockPos calculateFirstIntersectedVoxel(Space3D p1, Space3D p2) {
+        int x = (int) Math.floor(p1.x);
+        int y = (int) Math.floor(p1.y);
+        int z = (int) Math.floor(p1.z);
+
+        int endX = (int) Math.floor(p2.x);
+        int endY = (int) Math.floor(p2.y);
+        int endZ = (int) Math.floor(p2.z);
+
+        if (x == endX && y == endY && z == endZ) {
+            return new BlockPos(endX, endY, endZ);
+        }
+
+        double dx = p2.x - p1.x;
+        double dy = p2.y - p1.y;
+        double dz = p2.z - p1.z;
+
+        int stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+        int stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+        int stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
+
+        double tMaxX = (dx != 0) ? ((stepX > 0 ? (x + 1 - p1.x) : (p1.x - x)) / Math.abs(dx)) : Double.POSITIVE_INFINITY;
+        double tMaxY = (dy != 0) ? ((stepY > 0 ? (y + 1 - p1.y) : (p1.y - y)) / Math.abs(dy)) : Double.POSITIVE_INFINITY;
+        double tMaxZ = (dz != 0) ? ((stepZ > 0 ? (z + 1 - p1.z) : (p1.z - z)) / Math.abs(dz)) : Double.POSITIVE_INFINITY;
+
+        double tDeltaX = (dx != 0) ? (1.0 / Math.abs(dx)) : Double.POSITIVE_INFINITY;
+        double tDeltaY = (dy != 0) ? (1.0 / Math.abs(dy)) : Double.POSITIVE_INFINITY;
+        double tDeltaZ = (dz != 0) ? (1.0 / Math.abs(dz)) : Double.POSITIVE_INFINITY;
+
+        int prevX = x;
+        int prevY = y;
+        int prevZ = z;
+
+        int currX = x;
+        int currY = y;
+        int currZ = z;
+
+        double tEnter = 0.0;
+
+        int maxSteps = Math.abs(endX - x) + Math.abs(endY - y) + Math.abs(endZ - z) + 5;
+        while ((currX != endX || currY != endY || currZ != endZ) && maxSteps > 0) {
+            maxSteps--;
+            prevX = currX;
+            prevY = currY;
+            prevZ = currZ;
+
+            if (tMaxX < tMaxY) {
+                if (tMaxX < tMaxZ) {
+                    currX += stepX;
+                    tEnter = tMaxX;
+                    tMaxX += tDeltaX;
+                } else {
+                    currZ += stepZ;
+                    tEnter = tMaxZ;
+                    tMaxZ += tDeltaZ;
+                }
+            } else {
+                if (tMaxY < tMaxZ) {
+                    currY += stepY;
+                    tEnter = tMaxY;
+                    tMaxY += tDeltaY;
+                } else {
+                    currZ += stepZ;
+                    tEnter = tMaxZ;
+                    tMaxZ += tDeltaZ;
+                }
+            }
+        }
+
+        double remDistX = (1.0 - tEnter) * Math.abs(dx);
+        double remDistY = (1.0 - tEnter) * Math.abs(dy);
+        double remDistZ = (1.0 - tEnter) * Math.abs(dz);
+        double remDist = Math.sqrt(remDistX * remDistX + remDistY * remDistY + remDistZ * remDistZ);
+
+        if (remDist < 0.5) {
+            return new BlockPos(prevX, prevY, prevZ);
+        }
+        return new BlockPos(endX, endY, endZ);
     }
 }
 

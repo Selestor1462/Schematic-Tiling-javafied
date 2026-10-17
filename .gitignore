@@ -38,3 +38,4 @@ scratch/
 /return_cannon/
 *.litematic
 logs/
+__pycache__/
