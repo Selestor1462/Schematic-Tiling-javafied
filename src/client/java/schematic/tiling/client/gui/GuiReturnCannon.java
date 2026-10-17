@@ -509,17 +509,17 @@ public class GuiReturnCannon extends GuiBase {
         // --- Sort Buttons ---
         int sortBtnY = startY + 196;
         String distName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_dist");
-        String distLabel = (this.sortMode == SortMode.DISTANCE) ? (this.sortAscending ? "\u00a7e" + distName + " в–І" : "\u00a7e" + distName + " в–ј") : distName;
+        String distLabel = (this.sortMode == SortMode.DISTANCE) ? (this.sortAscending ? "\u00a7e" + distName + " \u25b2" : "\u00a7e" + distName + " \u25bc") : distName;
         ButtonGeneric btnDist = new ButtonGeneric(resultsX, sortBtnY, 75, 18, distLabel);
         this.addButton(btnDist, (btn, mouse) -> this.setSortMode(SortMode.DISTANCE));
 
         String tntName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_tnt");
-        String tntLabel = (this.sortMode == SortMode.TNT) ? (this.sortAscending ? "\u00a7e" + tntName + " в–І" : "\u00a7e" + tntName + " в–ј") : tntName;
+        String tntLabel = (this.sortMode == SortMode.TNT) ? (this.sortAscending ? "\u00a7e" + tntName + " \u25b2" : "\u00a7e" + tntName + " \u25bc") : tntName;
         ButtonGeneric btnTnt = new ButtonGeneric(resultsX + 80, sortBtnY, 75, 18, tntLabel);
         this.addButton(btnTnt, (btn, mouse) -> this.setSortMode(SortMode.TNT));
 
         String ticksName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_ticks");
-        String ticksLabel = (this.sortMode == SortMode.TICKS) ? (this.sortAscending ? "\u00a7e" + ticksName + " в–І" : "\u00a7e" + ticksName + " в–ј") : ticksName;
+        String ticksLabel = (this.sortMode == SortMode.TICKS) ? (this.sortAscending ? "\u00a7e" + ticksName + " \u25b2" : "\u00a7e" + ticksName + " \u25bc") : ticksName;
         ButtonGeneric btnTicks = new ButtonGeneric(resultsX + 160, sortBtnY, 75, 18, ticksLabel);
         this.addButton(btnTicks, (btn, mouse) -> this.setSortMode(SortMode.TICKS));
 
