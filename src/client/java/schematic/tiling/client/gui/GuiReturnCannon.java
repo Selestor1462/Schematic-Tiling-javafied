@@ -4,9 +4,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.core.BlockPos;
@@ -30,6 +32,7 @@ import fi.dy.masa.malilib.gui.GuiTextFieldInteger;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
 import fi.dy.masa.malilib.gui.widgets.WidgetCheckBox;
+import fi.dy.masa.malilib.gui.wrappers.TextFieldType;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.render.RenderUtils;
@@ -41,13 +44,17 @@ import schematic.tiling.cannon.CannonBlockPalette;
 import schematic.tiling.cannon.PearlCalculator;
 import schematic.tiling.cannon.PearlCalculator.CalculationResult;
 import schematic.tiling.cannon.PearlCalculator.CannonSettings;
+import schematic.tiling.cannon.PearlFlightSimulator;
+import schematic.tiling.cannon.PearlFlightSimulator.SimulationResult;
 import schematic.tiling.cannon.ReturnCannonAssembler;
+import schematic.tiling.client.util.ChunkFlightRouteRenderer;
+import schematic.tiling.client.util.PearlTrajectoryLineRenderer;
 import schematic.tiling.core.SchematicTilerUtil.GenerationResult;
 
 public class GuiReturnCannon extends GuiBase {
 
-    private static final int DIALOG_WIDTH = 490;
-    private static final int DIALOG_HEIGHT = 330;
+    private static final int DIALOG_WIDTH = 500;
+    private static final int DIALOG_HEIGHT = 365;
 
     private static LitematicaSchematic sReferenceAlignerSchematic = null;
 
@@ -118,6 +125,8 @@ public class GuiReturnCannon extends GuiBase {
     private WidgetCheckBox checkboxLoadToMemory;
     private WidgetCheckBox checkboxCreatePlacement;
     private WidgetCheckBox checkboxPowderSnow;
+    private WidgetCheckBox checkboxSafeOnly;
+    private WidgetCheckBox checkboxShowRouteHud;
 
     public enum SortMode {
         DISTANCE("Distance"),
@@ -133,17 +142,89 @@ public class GuiReturnCannon extends GuiBase {
 
     // Calculation results
     private List<CalculationResult> solutions = new ArrayList<>();
+    private static final Map<CalculationResult, SimulationResult> sSimulationCache = new HashMap<>();
     private int selectedSolutionIndex = -1;
     private int page = 0;
     private static final int RESULTS_PER_PAGE = 5;
 
-    private BlockPos lastCalculatedStart = null;
-    private double lastCalculatedDestX = Double.NaN;
-    private double lastCalculatedDestZ = Double.NaN;
+    public SimulationResult getOrRunSimulation(CalculationResult sol) {
+        if (sol == null) return null;
+        BlockPos start = lastCalculatedStart;
+        if (start == null && this.startXField != null && this.startZField != null) {
+            try {
+                int sx = Integer.parseInt(this.startXField.getTextWrapper().trim());
+                int sz = Integer.parseInt(this.startZField.getTextWrapper().trim());
+                start = new BlockPos(sx, this.settings.getStartY(), sz);
+                lastCalculatedStart = start;
+            } catch (Exception ignored) {}
+        }
+        if (start == null && lastSX != null && lastSZ != null) {
+            try {
+                int sx = Integer.parseInt(lastSX.trim());
+                int sz = Integer.parseInt(lastSZ.trim());
+                start = new BlockPos(sx, this.settings.getStartY(), sz);
+                lastCalculatedStart = start;
+            } catch (Exception ignored) {}
+        }
+        if (start == null) return null;
+
+        String rKey = PearlFlightSimulator.getRouteKey(start, sol);
+        SimulationResult routeSim = PearlFlightSimulator.getRouteSimulation(rKey);
+        if (routeSim != null) {
+            sSimulationCache.put(sol, routeSim);
+            return routeSim;
+        }
+
+        try {
+            net.minecraft.world.level.Level level = (this.mc != null) ? this.mc.level : null;
+            SimulationResult sim = PearlFlightSimulator.simulate(start, sol, this.settings, level);
+            if (sim != null) {
+                sSimulationCache.put(sol, sim);
+            }
+            return sim;
+        } catch (Throwable t) {
+            return sSimulationCache.get(sol);
+        }
+    }
+
+    private int lastVerifiedChunksVersion = -1;
+
+    public void refreshSimulationsIfNeeded() {
+        int currentVersion = PearlFlightSimulator.getVerifiedChunksVersion();
+        if (this.lastVerifiedChunksVersion != currentVersion) {
+            this.lastVerifiedChunksVersion = currentVersion;
+            if (this.allSolutions != null && !this.allSolutions.isEmpty()) {
+                for (CalculationResult r : this.allSolutions) {
+                    SimulationResult cur = sSimulationCache.get(r);
+                    if (cur == null || cur.status != PearlFlightSimulator.FlightStatus.COLLISION) {
+                        sSimulationCache.remove(r);
+                        this.getOrRunSimulation(r);
+                    }
+                }
+            }
+        }
+    }
+
+    public void clearSimulationCache() {
+        sSimulationCache.clear();
+        PearlFlightSimulator.clearRouteCache();
+        PearlTrajectoryLineRenderer.clearTrajectory();
+        ChunkFlightRouteRenderer.clearTrackedRoute();
+    }
+
+    public CannonSettings getSettings() {
+        return this.settings;
+    }
+
+    private static BlockPos lastCalculatedStart = null;
+    private static double lastCalculatedDestX = Double.NaN;
+    private static double lastCalculatedDestZ = Double.NaN;
 
     // Sorting
     private SortMode sortMode = SortMode.DISTANCE;
     private boolean sortAscending = true;
+    private boolean filterSafeOnly = false;
+    private List<CalculationResult> allSolutions = new ArrayList<>();
 
     // Status / Messages
     private String statusMessage = null;
@@ -165,11 +246,23 @@ public class GuiReturnCannon extends GuiBase {
     private static boolean lastLoadToMemory = true;
     private static boolean lastCreatePlacement = true;
     private static boolean lastGeneratePowderSnow = false;
+    private static boolean lastShowRouteHud = true;
+
+    public static void setLastShowRouteHud(boolean val) {
+        lastShowRouteHud = val;
+        ChunkFlightRouteRenderer.setHudEnabled(val);
+    }
+
+    public static boolean isLastShowRouteHud() {
+        return lastShowRouteHud;
+    }
     private static List<CalculationResult> lastSolutions = new ArrayList<>();
+    private static List<CalculationResult> lastAllSolutions = new ArrayList<>();
     private static int lastSelectedSolutionIndex = -1;
     private static int lastPage = 0;
     private static SortMode lastSortMode = SortMode.DISTANCE;
     private static boolean lastSortAscending = true;
+    private static boolean lastFilterSafeOnly = false;
     private static String lastStatusMessage = null;
     private static boolean lastStatusIsError = false;
     private static String lastSchemName = null;
@@ -182,35 +275,60 @@ public class GuiReturnCannon extends GuiBase {
         this.setParent(parent);
         this.title = StringUtils.translate("schematic_tiling.gui.cannon.title");
 
-        if (selection != lastSelection) {
+        if (selection != null && selection != lastSelection) {
             lastSelection = selection;
-            lastSX = null;
-            lastSZ = null;
+            boolean isCannonSelection = selection.getName() != null &&
+                    (selection.getName().toLowerCase(Locale.ROOT).contains("aligner")
+                     || selection.getName().toLowerCase(Locale.ROOT).contains("cannon"));
+            if (lastSX == null || isCannonSelection) {
+                BlockPos origin = selection.getEffectiveOrigin();
+                if (origin == null) origin = selection.getExplicitOrigin();
+                if (origin == null && !selection.getAllSubRegionBoxes().isEmpty()) {
+                    origin = selection.getAllSubRegionBoxes().get(0).getPos1();
+                }
+                if (origin != null) {
+                    lastSX = String.valueOf(origin.getX());
+                    lastSZ = String.valueOf(origin.getZ());
+                }
+            }
         }
 
         Path gameDir = DataManager.getSchematicsBaseDirectory().getParent();
         if (gameDir == null) gameDir = Path.of(".");
         this.settings = PearlCalculator.loadSettings(gameDir);
 
-        // Check if an aligner placement already exists in Litematica
+        // Check if an aligner or cannon placement already exists in Litematica
         if (lastSX == null) {
             try {
                 SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
                 SchematicPlacement selected = manager.getSelectedSchematicPlacement();
                 if (selected == null) {
                     for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
-                        if (p.getName() != null && p.getName().toLowerCase(Locale.ROOT).contains("aligner")) {
-                            selected = p;
-                            break;
+                        if (p != null && p.getName() != null) {
+                            String pName = p.getName().toLowerCase(Locale.ROOT);
+                            if (pName.contains("aligner") || pName.contains("cannon")) {
+                                selected = p;
+                                break;
+                            }
                         }
                     }
                 }
-                if (selected != null && selected.getName() != null && selected.getName().toLowerCase(Locale.ROOT).contains("aligner")) {
-                    BlockPos origin = selected.getOrigin();
-                    lastSX = String.valueOf(origin.getX());
-                    lastSZ = String.valueOf(origin.getZ());
-                    lastAlignerFacing = PearlCalculator.Direction.fromAlignerRotation(selected.getRotation());
-                    lastMirrorMode = ReturnCannonAssembler.MirrorMode.fromVanillaMirror(selected.getMirror());
+                if (selected != null && selected.getName() != null) {
+                    String sName = selected.getName().toLowerCase(Locale.ROOT);
+                    if (sName.contains("aligner") || sName.contains("cannon")) {
+                        BlockPos origin = selected.getOrigin();
+                        lastAlignerFacing = PearlCalculator.Direction.fromAlignerRotation(selected.getRotation());
+                        lastMirrorMode = ReturnCannonAssembler.MirrorMode.fromVanillaMirror(selected.getMirror());
+                        if (sName.contains("cannon") && !sName.contains("aligner")) {
+                            origin = ReturnCannonAssembler.getPearlPosFromPlacementOrigin(origin, selected.getRotation(), lastMirrorMode);
+                        } else if (sName.contains("aligner")) {
+                            origin = ReturnCannonAssembler.getPearlPosFromAlignerPlacement(origin, selected.getRotation(), lastMirrorMode);
+                        }
+                        if (origin != null) {
+                            lastSX = String.valueOf(origin.getX());
+                            lastSZ = String.valueOf(origin.getZ());
+                        }
+                    }
                 }
             } catch (Throwable ignored) {}
         }
@@ -219,10 +337,15 @@ public class GuiReturnCannon extends GuiBase {
         this.alignerFacing = lastAlignerFacing;
         this.mirrorMode = lastMirrorMode;
         this.solutions = lastSolutions;
+        this.allSolutions = (lastAllSolutions != null) ? lastAllSolutions : (this.solutions != null ? new ArrayList<>(this.solutions) : new ArrayList<>());
+        if (this.allSolutions != null && !this.allSolutions.isEmpty() && lastCalculatedStart != null) {
+            PearlFlightSimulator.registerCandidateSolutions(lastCalculatedStart, this.settings, this.allSolutions);
+        }
         this.selectedSolutionIndex = lastSelectedSolutionIndex;
         this.page = lastPage;
         this.sortMode = lastSortMode;
         this.sortAscending = lastSortAscending;
+        this.filterSafeOnly = lastFilterSafeOnly;
         this.statusMessage = lastStatusMessage;
         this.statusIsError = lastStatusIsError;
     }
@@ -232,7 +355,14 @@ public class GuiReturnCannon extends GuiBase {
         if (this.startZField != null) lastSZ = this.startZField.getTextWrapper();
         if (this.destXField != null) lastDX = this.destXField.getTextWrapper();
         if (this.destZField != null) lastDZ = this.destZField.getTextWrapper();
-        if (this.maxTntField != null) lastMaxTnt = this.maxTntField.getTextWrapper();
+        if (this.maxTntField != null) {
+            lastMaxTnt = this.maxTntField.getTextWrapper();
+            try {
+                if (Integer.parseInt(lastMaxTnt.trim()) > PearlCalculator.ABSOLUTE_MAX_TNT) {
+                    lastMaxTnt = String.valueOf(PearlCalculator.ABSOLUTE_MAX_TNT);
+                }
+            } catch (Exception ignored) {}
+        }
         if (this.maxTicksField != null) lastMaxTicks = this.maxTicksField.getTextWrapper();
         if (this.maxDistField != null) lastMaxDist = this.maxDistField.getTextWrapper();
         if (this.schematicNameField != null) lastSchemName = this.schematicNameField.getTextWrapper();
@@ -241,11 +371,21 @@ public class GuiReturnCannon extends GuiBase {
         if (this.checkboxLoadToMemory != null) lastLoadToMemory = this.checkboxLoadToMemory.isChecked();
         if (this.checkboxCreatePlacement != null) lastCreatePlacement = this.checkboxCreatePlacement.isChecked();
         if (this.checkboxPowderSnow != null) lastGeneratePowderSnow = this.checkboxPowderSnow.isChecked();
+        if (this.checkboxShowRouteHud != null) {
+            lastShowRouteHud = this.checkboxShowRouteHud.isChecked();
+            ChunkFlightRouteRenderer.setHudEnabled(lastShowRouteHud);
+        }
+        if (this.checkboxSafeOnly != null) {
+            this.filterSafeOnly = this.checkboxSafeOnly.isChecked();
+            lastFilterSafeOnly = this.filterSafeOnly;
+        }
         lastSolutions = this.solutions;
+        lastAllSolutions = this.allSolutions;
         lastSelectedSolutionIndex = this.selectedSolutionIndex;
         lastPage = this.page;
         lastSortMode = this.sortMode;
         lastSortAscending = this.sortAscending;
+        lastFilterSafeOnly = this.filterSafeOnly;
         lastStatusMessage = this.statusMessage;
         lastStatusIsError = this.statusIsError;
     }
@@ -257,18 +397,44 @@ public class GuiReturnCannon extends GuiBase {
             this.sortMode = mode;
             this.sortAscending = true;
         }
+        this.page = 0;
         this.sortSolutions();
+        if (!this.solutions.isEmpty()) {
+            this.selectedSolutionIndex = 0;
+        }
         this.saveGuiState();
         this.initGui();
     }
 
     private void sortSolutions() {
-        if (this.solutions == null || this.solutions.isEmpty()) {
-            return;
+        if (this.allSolutions == null || this.allSolutions.isEmpty()) {
+            if (this.solutions != null && !this.solutions.isEmpty()) {
+                this.allSolutions = new ArrayList<>(this.solutions);
+            } else {
+                this.solutions = new ArrayList<>();
+                this.selectedSolutionIndex = -1;
+                return;
+            }
         }
 
         CalculationResult selected = (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size())
                 ? this.solutions.get(this.selectedSolutionIndex) : null;
+
+        if (ChunkFlightRouteRenderer.hasTrackedRoute() || this.filterSafeOnly) {
+            for (CalculationResult r : this.allSolutions) {
+                this.getOrRunSimulation(r);
+            }
+        } else if (selected != null) {
+            this.getOrRunSimulation(selected);
+        }
+
+        List<CalculationResult> list = new ArrayList<>(this.allSolutions);
+        if (this.filterSafeOnly) {
+            list.removeIf(r -> {
+                SimulationResult sim = sSimulationCache.get(r);
+                return sim != null && sim.status == PearlFlightSimulator.FlightStatus.COLLISION;
+            });
+        }
 
         Comparator<CalculationResult> comp;
         switch (this.sortMode) {
@@ -294,17 +460,19 @@ public class GuiReturnCannon extends GuiBase {
         }
         comp = comp.thenComparing(r -> r.direction.name);
 
-        this.solutions.sort(comp);
+        list.sort(comp);
+        this.solutions = list;
 
         if (selected != null) {
             this.selectedSolutionIndex = this.solutions.indexOf(selected);
-            if (this.selectedSolutionIndex >= 0) {
-                this.page = this.selectedSolutionIndex / RESULTS_PER_PAGE;
-            }
         } else if (!this.solutions.isEmpty()) {
             this.selectedSolutionIndex = 0;
-            this.page = 0;
+        } else {
+            this.selectedSolutionIndex = -1;
         }
+
+        int maxPage = Math.max(0, (this.solutions.size() - 1) / RESULTS_PER_PAGE);
+        this.page = Math.max(0, Math.min(this.page, maxPage));
     }
 
     @Override
@@ -319,6 +487,28 @@ public class GuiReturnCannon extends GuiBase {
         super.onClose();
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+        if (PearlFlightSimulator.getVerifiedChunksVersion() != this.lastVerifiedChunksVersion) {
+            this.refreshSimulationsIfNeeded();
+            this.sortSolutions();
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                SimulationResult selSim = this.getOrRunSimulation(sel);
+                if (selSim != null) {
+                    if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                        PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
+                    }
+                    if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
+                        ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
+                    }
+                }
+            }
+            this.initGui();
+        }
+    }
+
     private String getMirrorBtnLabel() {
         return switch (this.mirrorMode) {
             case OFF -> StringUtils.translate("schematic_tiling.gui.cannon.button.mirror_off");
@@ -330,11 +520,30 @@ public class GuiReturnCannon extends GuiBase {
     @Override
     public void initGui() {
         super.initGui();
+        TextFieldType.STRING.setMaxLength(256);
 
         int dialogWidth = DIALOG_WIDTH;
         int dialogHeight = DIALOG_HEIGHT;
         int startX = (this.getScreenWidth() - dialogWidth) / 2;
         int startY = (this.getScreenHeight() - dialogHeight) / 2;
+
+        if (PearlFlightSimulator.getVerifiedChunksVersion() != this.lastVerifiedChunksVersion) {
+            this.refreshSimulationsIfNeeded();
+            this.sortSolutions();
+        }
+
+        if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+            CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+            SimulationResult selSim = this.getOrRunSimulation(sel);
+            if (selSim != null) {
+                if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                    PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
+                }
+                if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
+                    ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
+                }
+            }
+        }
 
         // Determine default start position from selection or player
         BlockPos defaultPos = null;
@@ -371,12 +580,24 @@ public class GuiReturnCannon extends GuiBase {
         String defaultSZStr = String.valueOf(defaultPos.getZ());
         String defaultMaxTntStr = String.valueOf(this.settings.maxTNT);
 
+        if (lastSX == null) {
+            lastSX = defaultSXStr;
+            lastSZ = defaultSZStr;
+        }
+
         // Preserve input text from fields if already active, otherwise from static cache / defaults
-        String curSX = (this.startXField != null) ? this.startXField.getTextWrapper() : (lastSX != null ? lastSX : defaultSXStr);
-        String curSZ = (this.startZField != null) ? this.startZField.getTextWrapper() : (lastSZ != null ? lastSZ : defaultSZStr);
+        String curSX = (this.startXField != null) ? this.startXField.getTextWrapper() : lastSX;
+        String curSZ = (this.startZField != null) ? this.startZField.getTextWrapper() : lastSZ;
         String curDX = (this.destXField != null) ? this.destXField.getTextWrapper() : (lastDX != null ? lastDX : "100.0");
         String curDZ = (this.destZField != null) ? this.destZField.getTextWrapper() : (lastDZ != null ? lastDZ : "100.0");
         String curMaxTnt = (this.maxTntField != null) ? this.maxTntField.getTextWrapper() : (lastMaxTnt != null ? lastMaxTnt : defaultMaxTntStr);
+        try {
+            if (Integer.parseInt(curMaxTnt.trim()) > PearlCalculator.ABSOLUTE_MAX_TNT) {
+                curMaxTnt = String.valueOf(PearlCalculator.ABSOLUTE_MAX_TNT);
+            }
+        } catch (Exception ignored) {
+            curMaxTnt = String.valueOf(PearlCalculator.ABSOLUTE_MAX_TNT);
+        }
         String curMaxTicks = (this.maxTicksField != null) ? this.maxTicksField.getTextWrapper() : (lastMaxTicks != null ? lastMaxTicks : "100");
         String curMaxDist = (this.maxDistField != null) ? this.maxDistField.getTextWrapper() : (lastMaxDist != null ? lastMaxDist : "10.0");
 
@@ -404,15 +625,18 @@ public class GuiReturnCannon extends GuiBase {
         y += 21;
 
         // --- Destination Inputs ---
-        this.destXField = new GuiTextFieldDouble(col1X + 32, y, 54, 18, this.font);
+        this.destXField = new GuiTextFieldDouble(col1X + 32, y, 50, 18, this.font);
         this.destXField.setTextWrapper(curDX);
         this.addTextField(this.destXField, null);
 
-        this.destZField = new GuiTextFieldDouble(col1X + 90, y, 54, 18, this.font);
+        this.destZField = new GuiTextFieldDouble(col1X + 85, y, 50, 18, this.font);
         this.destZField.setTextWrapper(curDZ);
         this.addTextField(this.destZField, null);
 
-        ButtonGeneric toPlayerDestBtn = new ButtonGeneric(col1X + 148, y, 58, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.to_player"));
+        ButtonGeneric toPlayerDestBtn = new ButtonGeneric(col1X + 138, y, 32, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.pos"));
+        toPlayerDestBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.dest_to_player"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.dest_to_player_desc"));
         this.addButton(toPlayerDestBtn, (btn, mouse) -> {
             if (this.mc != null && this.mc.player != null) {
                 double px = this.mc.player.getX();
@@ -425,6 +649,29 @@ public class GuiReturnCannon extends GuiBase {
                 this.statusIsError = false;
                 this.runCalculation();
             }
+        });
+
+        ButtonGeneric destsBtn = new ButtonGeneric(col1X + 172, y, 34, 18, StringUtils.translate("schematic_tiling.gui.cannon.button.dests"));
+        destsBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.saved_destinations"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.saved_destinations_desc"));
+        this.addButton(destsBtn, (btn, mouse) -> {
+            this.saveGuiState();
+            double curDblX = 0.0;
+            double curDblZ = 0.0;
+            try {
+                curDblX = Double.parseDouble(this.destXField.getTextWrapper().trim());
+                curDblZ = Double.parseDouble(this.destZField.getTextWrapper().trim());
+            } catch (Exception ignored) {}
+
+            BlockPos startPos = null;
+            try {
+                int sx = Integer.parseInt(this.startXField.getTextWrapper().trim());
+                int sz = Integer.parseInt(this.startZField.getTextWrapper().trim());
+                startPos = new BlockPos(sx, PearlCalculator.NETHER_ROOF_MIN_Y, sz);
+            } catch (Exception ignored) {}
+
+            GuiBase.openGui(new GuiCannonDestinations(this, curDblX, curDblZ, startPos));
         });
         y += 21;
 
@@ -464,7 +711,22 @@ public class GuiReturnCannon extends GuiBase {
         // --- Max TNT & Ticks ---
         this.maxTntField = new GuiTextFieldInteger(col1X + 46, y, 48, 18, this.font);
         this.maxTntField.setTextWrapper(curMaxTnt);
-        this.addTextField(this.maxTntField, null);
+        this.addTextField(this.maxTntField, tf -> {
+            try {
+                String text = tf.getTextWrapper().trim();
+                if (text.length() > 3) {
+                    text = text.substring(0, 3);
+                    tf.setTextWrapper(text);
+                }
+                if (!text.isEmpty()) {
+                    int val = Integer.parseInt(text);
+                    if (val > PearlCalculator.ABSOLUTE_MAX_TNT) {
+                        tf.setTextWrapper(String.valueOf(PearlCalculator.ABSOLUTE_MAX_TNT));
+                    }
+                }
+            } catch (Exception ignored) {}
+            return false;
+        });
 
         this.maxTicksField = new GuiTextFieldInteger(col1X + 138, y, 48, 18, this.font);
         this.maxTicksField.setTextWrapper(curMaxTicks);
@@ -492,6 +754,7 @@ public class GuiReturnCannon extends GuiBase {
         this.addButton(prevBtn, (btn, mouse) -> {
             if (this.page > 0) {
                 this.page--;
+                this.saveGuiState();
                 this.initGui();
             }
         });
@@ -502,26 +765,43 @@ public class GuiReturnCannon extends GuiBase {
         this.addButton(nextBtn, (btn, mouse) -> {
             if (this.page < maxPage) {
                 this.page++;
+                this.saveGuiState();
                 this.initGui();
             }
         });
 
-        // --- Sort Buttons ---
+        // --- Sort & Filter Controls ---
         int sortBtnY = startY + 196;
         String distName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_dist");
         String distLabel = (this.sortMode == SortMode.DISTANCE) ? (this.sortAscending ? "\u00a7e" + distName + " ▲" : "\u00a7e" + distName + " ▼") : distName;
-        ButtonGeneric btnDist = new ButtonGeneric(resultsX, sortBtnY, 75, 18, distLabel);
+        ButtonGeneric btnDist = new ButtonGeneric(resultsX, sortBtnY, 48, 18, distLabel);
         this.addButton(btnDist, (btn, mouse) -> this.setSortMode(SortMode.DISTANCE));
 
         String tntName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_tnt");
         String tntLabel = (this.sortMode == SortMode.TNT) ? (this.sortAscending ? "\u00a7e" + tntName + " ▲" : "\u00a7e" + tntName + " ▼") : tntName;
-        ButtonGeneric btnTnt = new ButtonGeneric(resultsX + 80, sortBtnY, 75, 18, tntLabel);
+        ButtonGeneric btnTnt = new ButtonGeneric(resultsX + 51, sortBtnY, 46, 18, tntLabel);
         this.addButton(btnTnt, (btn, mouse) -> this.setSortMode(SortMode.TNT));
 
         String ticksName = StringUtils.translate("schematic_tiling.gui.cannon.button.sort_ticks");
         String ticksLabel = (this.sortMode == SortMode.TICKS) ? (this.sortAscending ? "\u00a7e" + ticksName + " ▲" : "\u00a7e" + ticksName + " ▼") : ticksName;
-        ButtonGeneric btnTicks = new ButtonGeneric(resultsX + 160, sortBtnY, 75, 18, ticksLabel);
+        ButtonGeneric btnTicks = new ButtonGeneric(resultsX + 100, sortBtnY, 48, 18, ticksLabel);
         this.addButton(btnTicks, (btn, mouse) -> this.setSortMode(SortMode.TICKS));
+
+        this.checkboxSafeOnly = new WidgetCheckBox(resultsX + 154, sortBtnY + 2, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED,
+                StringUtils.translate("schematic_tiling.gui.cannon.checkbox.safe_only"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.filter_safe"));
+        this.checkboxSafeOnly.setChecked(this.filterSafeOnly, false);
+        this.checkboxSafeOnly.setListener(cb -> {
+            this.filterSafeOnly = cb.isChecked();
+            this.page = 0;
+            this.sortSolutions();
+            if (!this.solutions.isEmpty()) {
+                this.selectedSolutionIndex = 0;
+            }
+            this.saveGuiState();
+            this.initGui();
+        });
+        this.addWidget(this.checkboxSafeOnly);
 
         // Add clickable result selection buttons
         int pageStart = this.page * RESULTS_PER_PAGE;
@@ -532,28 +812,65 @@ public class GuiReturnCannon extends GuiBase {
             int rowY = resultsY + ((i - pageStart) * 26);
             boolean isSelected = (this.selectedSolutionIndex == solIdx);
 
+            SimulationResult sim = this.getOrRunSimulation(res);
+            String statusBadge = "";
+            if (sim != null) {
+                if (sim.status == PearlFlightSimulator.FlightStatus.COLLISION) {
+                    statusBadge = " \u00a7c[!]";
+                } else if (sim.status == PearlFlightSimulator.FlightStatus.CLEAR) {
+                    statusBadge = " \u00a7a[OK]";
+                } else if (sim.status == PearlFlightSimulator.FlightStatus.UNCHECKED) {
+                    statusBadge = sim.chunksUnloaded > 0 ? " \u00a7e[?]" : "";
+                }
+            }
+
             String dirName = StringUtils.translate("schematic_tiling.direction." + res.direction.name().toLowerCase(Locale.ROOT));
-            String label = String.format(Locale.ROOT, "#%d: %d TNT (R:%d B:%d) %s %dt (%.2fm)",
-                    solIdx + 1, res.getTotalTNT(), res.redTNT, res.blueTNT, dirName, res.tick, res.distance);
+            String label = String.format(Locale.ROOT, "#%d: %d TNT (R:%d B:%d) %s %dt (%.2fm)%s",
+                    solIdx + 1, res.getTotalTNT(), res.redTNT, res.blueTNT, dirName, res.tick, res.distance, statusBadge);
 
             String arrivalX = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.x);
             String arrivalY = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.y);
             String arrivalZ = String.format(Locale.ROOT, "%.2f", res.worldArrivalPos.z);
             String distStr = String.format(Locale.ROOT, "%.2f", res.distance);
 
+            List<String> hoverList = new ArrayList<>();
+            hoverList.add(StringUtils.translate("schematic_tiling.gui.cannon.hover.total_tnt",
+                    res.getTotalTNT(), res.redTNT, res.blueTNT));
+            hoverList.add(StringUtils.translate("schematic_tiling.gui.cannon.hover.landing",
+                    arrivalX, arrivalY, arrivalZ, distStr));
+            hoverList.add(StringUtils.translate("schematic_tiling.gui.cannon.hover.stopper",
+                    res.catchBlockPos.getX(), res.catchBlockPos.getY(), res.catchBlockPos.getZ()));
+
+            if (sim != null) {
+                if (sim.status == PearlFlightSimulator.FlightStatus.COLLISION) {
+                    hoverList.add("\u00a7c" + StringUtils.translate("schematic_tiling.gui.cannon.hover.sim_collision",
+                            sim.getCollisionBlockName(), sim.collisionPos.toShortString(), sim.collisionTick));
+                } else if (sim.status == PearlFlightSimulator.FlightStatus.CLEAR) {
+                    hoverList.add("\u00a7a" + StringUtils.translate("schematic_tiling.gui.cannon.hover.sim_clear"));
+                } else if (sim.status == PearlFlightSimulator.FlightStatus.UNCHECKED && sim.chunksUnloaded > 0) {
+                    hoverList.add("\u00a7e" + StringUtils.translate("schematic_tiling.gui.cannon.hover.sim_unverified",
+                            sim.chunksLoaded, sim.chunksTraversed, sim.chunksUnloaded));
+                }
+            }
+
             ButtonGeneric rowBtn = new ButtonGeneric(resultsX, rowY, resultsW, 22, label,
-                    StringUtils.translate("schematic_tiling.gui.cannon.hover.total_tnt",
-                            res.getTotalTNT(), res.redTNT, res.blueTNT),
-                    StringUtils.translate("schematic_tiling.gui.cannon.hover.landing",
-                            arrivalX, arrivalY, arrivalZ, distStr),
-                    StringUtils.translate("schematic_tiling.gui.cannon.hover.stopper",
-                            res.catchBlockPos.getX(), res.catchBlockPos.getY(), res.catchBlockPos.getZ())
+                    hoverList.toArray(new String[0])
             );
             if (isSelected) {
                 rowBtn.setEnabled(false);
             }
             this.addButton(rowBtn, (btn, mouse) -> {
                 this.selectedSolutionIndex = solIdx;
+                CalculationResult sel = this.solutions.get(solIdx);
+                SimulationResult selSim = this.getOrRunSimulation(sel);
+                if (selSim != null) {
+                    if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                        PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
+                    }
+                    if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
+                        ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
+                    }
+                }
                 this.initGui();
             });
         }
@@ -573,7 +890,6 @@ public class GuiReturnCannon extends GuiBase {
                 : (lastSchemName != null ? lastSchemName : defaultName);
 
         this.schematicNameField = new GuiTextFieldGeneric(resultsX, startY + 236, resultsW, 18, this.font);
-        this.schematicNameField.setMaxLengthWrapper(128);
         this.schematicNameField.setTextWrapper(curSchemName);
         this.schematicNameField.setHoverTooltip(
                 StringUtils.translate("schematic_tiling.gui.cannon.hover.schematic_name_title"),
@@ -581,36 +897,153 @@ public class GuiReturnCannon extends GuiBase {
         this.addTextField(this.schematicNameField, null);
 
         // --- Bottom Area: Checkboxes & Actions ---
-        int bottomY = startY + 244;
+        int bottomY = startY + 256;
         boolean loadMem = (this.checkboxLoadToMemory != null) ? this.checkboxLoadToMemory.isChecked() : lastLoadToMemory;
         boolean createPlace = (this.checkboxCreatePlacement != null) ? this.checkboxCreatePlacement.isChecked() : lastCreatePlacement;
         boolean genSnow = (this.checkboxPowderSnow != null) ? this.checkboxPowderSnow.isChecked() : lastGeneratePowderSnow;
+        boolean showHud = (this.checkboxShowRouteHud != null) ? this.checkboxShowRouteHud.isChecked() : lastShowRouteHud;
 
         this.checkboxLoadToMemory = new WidgetCheckBox(startX + 15, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.load_to_memory"));
         this.checkboxLoadToMemory.setChecked(loadMem, false);
         this.addWidget(this.checkboxLoadToMemory);
 
-        this.checkboxCreatePlacement = new WidgetCheckBox(startX + 115, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.create_placement"));
+        this.checkboxCreatePlacement = new WidgetCheckBox(startX + 120, bottomY, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.create_placement"));
         this.checkboxCreatePlacement.setChecked(createPlace, false);
         this.addWidget(this.checkboxCreatePlacement);
 
-        this.checkboxPowderSnow = new WidgetCheckBox(startX + 15, bottomY + 15, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.powder_snow"));
+        this.checkboxPowderSnow = new WidgetCheckBox(startX + 15, bottomY + 16, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED, StringUtils.translate("schematic_tiling.gui.cannon.checkbox.powder_snow"));
         this.checkboxPowderSnow.setChecked(genSnow, false);
         this.addWidget(this.checkboxPowderSnow);
 
-        int btnY = startY + 276;
+        this.checkboxShowRouteHud = new WidgetCheckBox(startX + 185, bottomY + 16, Icons.CHECKBOX_UNSELECTED, Icons.CHECKBOX_SELECTED,
+                StringUtils.translate("schematic_tiling.gui.cannon.checkbox.show_hud"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.show_hud"));
+        this.checkboxShowRouteHud.setChecked(showHud, false);
+        this.checkboxShowRouteHud.setListener(cb -> {
+            lastShowRouteHud = cb.isChecked();
+            ChunkFlightRouteRenderer.setHudEnabled(lastShowRouteHud);
+        });
+        this.addWidget(this.checkboxShowRouteHud);
 
-        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, btnY, 90, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.generate_schem"));
-        assembleBtn.setEnabled(hasSol);
-        this.addButton(assembleBtn, (btn, mouse) -> this.generateSchematic());
+        // Row 1: Flight & Trajectory tools
+        int row1Y = startY + 292;
 
-        ButtonRgbPalette paletteBtn = new ButtonRgbPalette(startX + 107, btnY, 20, 20, blockPalette);
+        boolean isTrackingRoute = hasSol && ChunkFlightRouteRenderer.hasTrackedRoute();
+
+        String checkBtnLabel = isTrackingRoute
+                ? StringUtils.translate("schematic_tiling.gui.cannon.button.stop_check")
+                : StringUtils.translate("schematic_tiling.gui.cannon.button.check_route");
+        ButtonGeneric checkRouteBtn = new ButtonGeneric(startX + 15, row1Y, 84, 20, checkBtnLabel);
+        checkRouteBtn.setEnabled(hasSol);
+        checkRouteBtn.setHoverStrings(
+                isTrackingRoute
+                        ? StringUtils.translate("schematic_tiling.gui.cannon.hover.stop_check")
+                        : StringUtils.translate("schematic_tiling.gui.cannon.hover.check_route"),
+                isTrackingRoute
+                        ? StringUtils.translate("schematic_tiling.gui.cannon.hover.stop_check_desc")
+                        : StringUtils.translate("schematic_tiling.gui.cannon.hover.check_route_desc")
+        );
+        final boolean currentlyTracking = isTrackingRoute;
+        this.addButton(checkRouteBtn, (btn, mouse) -> {
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                if (currentlyTracking) {
+                    ChunkFlightRouteRenderer.clearTrackedRoute();
+                    PearlTrajectoryLineRenderer.clearTrajectory();
+                    PearlTrajectoryLineRenderer.setLineDrawingEnabled(false);
+                    ChunkFlightRouteRenderer.setHudEnabled(false);
+                    lastShowRouteHud = false;
+                    if (this.checkboxShowRouteHud != null) {
+                        this.checkboxShowRouteHud.setChecked(false, false);
+                    }
+                } else {
+                    if (this.mc != null && this.mc.level != null) {
+                        PearlFlightSimulator.verifyCurrentlyLoadedChunks(this.mc.level);
+                    }
+                    SimulationResult selSim = this.getOrRunSimulation(sel);
+                    if (selSim != null) {
+                        ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
+                        ChunkFlightRouteRenderer.setHudEnabled(true);
+                        lastShowRouteHud = true;
+                        if (this.checkboxShowRouteHud != null) {
+                            this.checkboxShowRouteHud.setChecked(true, false);
+                        }
+                        PearlTrajectoryLineRenderer.setLineDrawingEnabled(true);
+                        PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
+                    }
+                }
+                this.saveGuiState();
+                this.initGui();
+            }
+        });
+
+        ButtonGeneric ticksBtn = new ButtonGeneric(startX + 102, row1Y, 60, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.ticks"));
+        ticksBtn.setEnabled(hasSol);
+        ticksBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.ticks"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.ticks_desc")
+        );
+        this.addButton(ticksBtn, (btn, mouse) -> {
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                SimulationResult sim = this.getOrRunSimulation(sel);
+                if (sim != null) {
+                    this.saveGuiState();
+                    GuiBase.openGui(new GuiCannonTrajectoryTicks(this, sim));
+                }
+            }
+        });
+
+        boolean isLineShowing = PearlTrajectoryLineRenderer.isLineDrawingEnabled();
+        String lineLabel = isLineShowing
+                ? StringUtils.translate("schematic_tiling.gui.cannon.button.hide_line")
+                : StringUtils.translate("schematic_tiling.gui.cannon.button.draw_line");
+        ButtonGeneric lineBtn = new ButtonGeneric(startX + 165, row1Y, 85, 20, lineLabel);
+        lineBtn.setEnabled(hasSol);
+        this.addButton(lineBtn, (btn, mouse) -> {
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                SimulationResult sim = this.getOrRunSimulation(sel);
+                if (sim != null) {
+                    PearlTrajectoryLineRenderer.toggleTrajectory(sim);
+                    this.saveGuiState();
+                    this.initGui();
+                }
+            }
+        });
+
+        ButtonRgbPalette paletteBtn = new ButtonRgbPalette(startX + 253, row1Y, 20, 20, blockPalette);
         this.addButton(paletteBtn, (btn, mouse) -> {
             this.saveGuiState();
             GuiBase.openGui(new GuiCannonBlockPalette(this, blockPalette));
         });
 
-        ButtonGeneric copyLandingBtn = new ButtonGeneric(startX + 130, btnY, 80, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_landing"));
+        ButtonGeneric setblockBtn = new ButtonGeneric(startX + 276, row1Y, 110, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.setblock_catch"));
+        setblockBtn.setEnabled(hasSol && !schematic.tiling.client.util.CatchBlockPlacer.isRunning());
+        this.addButton(setblockBtn, (btn, mouse) -> {
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null && this.mc.player != null) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                BlockPos cp = sel.catchBlockPos;
+                schematic.tiling.client.util.CatchBlockPlacer.startPlacement(cp);
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.placing_catch", cp.getX(), cp.getY(), cp.getZ());
+                this.statusIsError = false;
+            }
+        });
+
+        ButtonGeneric closeBtn = new ButtonGeneric(startX + dialogWidth - 75, row1Y, 60, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.close"));
+        this.addButton(closeBtn, (btn, mouse) -> {
+            this.saveGuiState();
+            GuiBase.openGui(this.parent);
+        });
+
+        // Row 2: Schematic Generation & Coordinates
+        int row2Y = startY + 316;
+
+        ButtonGeneric assembleBtn = new ButtonGeneric(startX + 15, row2Y, 130, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.generate_schem"));
+        assembleBtn.setEnabled(hasSol);
+        this.addButton(assembleBtn, (btn, mouse) -> this.generateSchematic());
+
+        ButtonGeneric copyLandingBtn = new ButtonGeneric(startX + 150, row2Y, 115, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_landing"));
         copyLandingBtn.setEnabled(hasSol);
         this.addButton(copyLandingBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null) {
@@ -626,7 +1059,7 @@ public class GuiReturnCannon extends GuiBase {
             }
         });
 
-        ButtonGeneric copyCatchBtn = new ButtonGeneric(startX + 215, btnY, 72, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_catch"));
+        ButtonGeneric copyCatchBtn = new ButtonGeneric(startX + 270, row2Y, 115, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.copy_catch"));
         copyCatchBtn.setEnabled(hasSol);
         this.addButton(copyCatchBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null) {
@@ -636,24 +1069,6 @@ public class GuiReturnCannon extends GuiBase {
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.copied_catch", sel.catchBlockPos.toShortString());
                 this.statusIsError = false;
             }
-        });
-
-        ButtonGeneric setblockBtn = new ButtonGeneric(startX + 292, btnY, 92, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.setblock_catch"));
-        setblockBtn.setEnabled(hasSol && !schematic.tiling.client.util.CatchBlockPlacer.isRunning());
-        this.addButton(setblockBtn, (btn, mouse) -> {
-            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size() && this.mc != null && this.mc.player != null) {
-                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
-                BlockPos cp = sel.catchBlockPos;
-                schematic.tiling.client.util.CatchBlockPlacer.startPlacement(cp);
-                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.placing_catch", cp.getX(), cp.getY(), cp.getZ());
-                this.statusIsError = false;
-            }
-        });
-
-        ButtonGeneric closeBtn = new ButtonGeneric(startX + dialogWidth - 75, btnY, 60, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.close"));
-        this.addButton(closeBtn, (btn, mouse) -> {
-            this.saveGuiState();
-            GuiBase.openGui(this.parent);
         });
     }
 
@@ -668,21 +1083,51 @@ public class GuiReturnCannon extends GuiBase {
             double dz = Double.parseDouble(this.destZField.getTextWrapper().trim());
 
             int maxTnt = Integer.parseInt(this.maxTntField.getTextWrapper().trim());
+            if (maxTnt > PearlCalculator.ABSOLUTE_MAX_TNT) {
+                maxTnt = PearlCalculator.ABSOLUTE_MAX_TNT;
+                this.maxTntField.setTextWrapper(String.valueOf(PearlCalculator.ABSOLUTE_MAX_TNT));
+            } else if (maxTnt < 1) {
+                maxTnt = 1;
+                this.maxTntField.setTextWrapper("1");
+            }
             int maxTicks = Integer.parseInt(this.maxTicksField.getTextWrapper().trim());
             double maxDist = Double.parseDouble(this.maxDistField.getTextWrapper().trim());
 
             this.settings.maxTNT = maxTnt;
 
-            this.solutions = PearlCalculator.calculateSolutions(
+            List<CalculationResult> calculated = PearlCalculator.calculateSolutions(
                     cannonStart, dx, dz, this.settings, maxTicks, maxDist
             );
+            this.allSolutions = new ArrayList<>(calculated);
+            this.solutions = new ArrayList<>(calculated);
+            boolean coordsChanged = (this.lastCalculatedStart == null || !this.lastCalculatedStart.equals(cannonStart)
+                    || Double.isNaN(this.lastCalculatedDestX) || Math.abs(this.lastCalculatedDestX - dx) > 1e-4
+                    || Double.isNaN(this.lastCalculatedDestZ) || Math.abs(this.lastCalculatedDestZ - dz) > 1e-4);
+
             this.lastCalculatedStart = cannonStart;
             this.lastCalculatedDestX = dx;
             this.lastCalculatedDestZ = dz;
 
+            // Always clear simulation cache on Calculate Solutions to re-evaluate against current level
+            this.clearSimulationCache();
+            PearlFlightSimulator.registerCandidateSolutions(cannonStart, this.settings, this.allSolutions);
+
             this.sortSolutions();
+            this.lastVerifiedChunksVersion = PearlFlightSimulator.getVerifiedChunksVersion();
             this.page = 0;
             this.selectedSolutionIndex = this.solutions.isEmpty() ? -1 : 0;
+            if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                SimulationResult selSim = this.getOrRunSimulation(sel);
+                if (selSim != null) {
+                    if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                        PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
+                    }
+                    if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
+                        ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
+                    }
+                }
+            }
 
             if (this.solutions.isEmpty()) {
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_solutions");
@@ -692,11 +1137,15 @@ public class GuiReturnCannon extends GuiBase {
                 this.statusIsError = false;
             }
         } catch (Throwable t) {
-            this.statusMessage = "Input error: " + t.getMessage();
+            String msg = t.getMessage();
+            if (msg == null) msg = t.getClass().getSimpleName();
+            this.statusMessage = "Input error: " + msg;
             this.statusIsError = true;
         }
         this.saveGuiState();
-        this.initGui();
+        try {
+            this.initGui();
+        } catch (Throwable ignored) {}
     }
 
     public void loadPresetAndCalculate(
@@ -720,6 +1169,18 @@ public class GuiReturnCannon extends GuiBase {
         if (this.destXField != null) this.destXField.setTextWrapper(lastDX);
         if (this.destZField != null) this.destZField.setTextWrapper(lastDZ);
         if (this.schematicNameField != null) this.schematicNameField.setTextWrapper(name);
+        this.runCalculation();
+    }
+
+    public void setDestinationCoords(double dx, double dz, String destName) {
+        lastDX = String.format(Locale.ROOT, "%.1f", dx);
+        lastDZ = String.format(Locale.ROOT, "%.1f", dz);
+        if (this.destXField != null) this.destXField.setTextWrapper(lastDX);
+        if (this.destZField != null) this.destZField.setTextWrapper(lastDZ);
+        this.saveGuiState();
+        this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.dest_loaded",
+                destName, String.format(Locale.ROOT, "%.1f", dx), String.format(Locale.ROOT, "%.1f", dz));
+        this.statusIsError = false;
         this.runCalculation();
     }
 
@@ -818,6 +1279,15 @@ public class GuiReturnCannon extends GuiBase {
         int startY = (this.getScreenHeight() - dialogHeight) / 2;
 
         RenderUtils.drawOutlinedBox(ctx, startX, startY, dialogWidth, dialogHeight, 0xFF1C1C1C, COLOR_HORIZONTAL_BAR);
+
+        // Draw details box background here before widgets and checkboxes are rendered
+        if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+            int col1X = startX + 15;
+            int boxY = startY + 179;
+            int boxW = 206;
+            int boxH = 74;
+            RenderUtils.drawOutlinedBox(ctx, col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
+        }
     }
 
     @Override
@@ -853,8 +1323,6 @@ public class GuiReturnCannon extends GuiBase {
             CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
             int boxY = y;
             int boxW = 206;
-            int boxH = 62;
-            RenderUtils.drawOutlinedBox(ctx, col1X, boxY, boxW, boxH, 0xD0202020, 0xFF505050);
 
             String distStr = String.format(Locale.ROOT, "%.2f", sel.distance);
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.landing", sel.tick, distStr),
@@ -887,6 +1355,33 @@ public class GuiReturnCannon extends GuiBase {
             String dirName = StringUtils.translate("schematic_tiling.direction." + sel.direction.name().toLowerCase(Locale.ROOT));
             this.drawString(ctx, StringUtils.translate("schematic_tiling.gui.cannon.details.basket_rods", dirName),
                     col1X + 6, boxY + 53, 0xFFFFAA00);
+
+            SimulationResult selSim = this.getOrRunSimulation(sel);
+            if (selSim != null) {
+                if (selSim.status == PearlFlightSimulator.FlightStatus.COLLISION && selSim.collisionPos != null) {
+                    int maxW = boxW - 12; // 194px
+                    String blockName = selSim.getCollisionBlockName();
+                    String posStr = selSim.collisionPos.toShortString();
+                    String obstStr = String.format(Locale.ROOT, "Path: \u00a7cCOLLISION (%s at %s)", blockName, posStr);
+                    if (this.getStringWidth(obstStr) > maxW) {
+                        obstStr = String.format(Locale.ROOT, "Path: \u00a7cCOLLISION at %s", posStr);
+                        if (this.getStringWidth(obstStr) > maxW) {
+                            obstStr = "Path: \u00a7cCOLLISION: " + posStr;
+                        }
+                    }
+                    this.drawString(ctx, obstStr, col1X + 6, boxY + 63, 0xFFFF5555);
+                } else if (selSim.status == PearlFlightSimulator.FlightStatus.CLEAR) {
+                    String clearStr = String.format(Locale.ROOT, "Path: \u00a7aCLEAR (%d/%d chunks)",
+                            selSim.chunksLoaded, selSim.chunksTraversed);
+                    this.drawString(ctx, clearStr, col1X + 6, boxY + 63, 0xFF55FF55);
+                } else if (selSim.status == PearlFlightSimulator.FlightStatus.UNCHECKED && selSim.chunksUnloaded > 0) {
+                    String unverifiedStr = String.format(Locale.ROOT, "Path: \u00a7eUNVERIFIED (%d/%d chunks)",
+                            selSim.chunksLoaded, selSim.chunksTraversed);
+                    this.drawString(ctx, unverifiedStr, col1X + 6, boxY + 63, 0xFFFFAA00);
+                } else {
+                    this.drawString(ctx, "Path: \u00a77Unchecked", col1X + 6, boxY + 63, 0xFFAAAAAA);
+                }
+            }
         }
 
         // Solutions Header (Right Side)
@@ -898,7 +1393,7 @@ public class GuiReturnCannon extends GuiBase {
         // Status message placed cleanly below action buttons
         if (this.statusMessage != null) {
             int msgColor = this.statusIsError ? 0xFFFF5555 : 0xFF55FF55;
-            this.drawString(ctx, this.statusMessage, startX + 15, startY + 304, msgColor);
+            this.drawString(ctx, this.statusMessage, startX + 15, startY + 344, msgColor);
         }
     }
 
@@ -911,7 +1406,7 @@ public class GuiReturnCannon extends GuiBase {
             int sx = playerPos.getX();
             int sy = PearlCalculator.NETHER_ROOF_MIN_Y;
             int sz = playerPos.getZ();
-            BlockPos targetPos = new BlockPos(sx, sy, sz);
+            BlockPos targetPos = ReturnCannonAssembler.getAlignerPlacementOrigin(sx, sz, this.alignerFacing.getAlignerRotation(), this.mirrorMode);
 
             if (this.startXField != null) this.startXField.setTextWrapper(String.valueOf(sx));
             if (this.startZField != null) this.startZField.setTextWrapper(String.valueOf(sz));
@@ -960,20 +1455,32 @@ public class GuiReturnCannon extends GuiBase {
             this.statusIsError = false;
             return;
         } catch (Throwable t) {
-            this.statusMessage = "Place Aligner error: " + t.getMessage();
+            String msg = t.getMessage();
+            if (msg == null) msg = t.getClass().getSimpleName();
+            this.statusMessage = "Place Aligner error: " + msg;
             this.statusIsError = true;
         }
         this.saveGuiState();
-        this.initGui();
+        try {
+            this.initGui();
+        } catch (Throwable ignored) {}
     }
 
     private void syncFromPlacement() {
         try {
             SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+            if (manager == null) {
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_placement_selected");
+                this.statusIsError = true;
+                this.saveGuiState();
+                this.initGui();
+                return;
+            }
+
             SchematicPlacement placement = manager.getSelectedSchematicPlacement();
             if (placement == null) {
                 for (SchematicPlacement p : manager.getAllSchematicsPlacements()) {
-                    if (p.getName() != null && (p.getName().toLowerCase(Locale.ROOT).contains("aligner")
+                    if (p != null && p.getName() != null && (p.getName().toLowerCase(Locale.ROOT).contains("aligner")
                             || p.getName().toLowerCase(Locale.ROOT).contains("cannon"))) {
                         placement = p;
                         break;
@@ -981,15 +1488,13 @@ public class GuiReturnCannon extends GuiBase {
                 }
             }
 
-            if (placement == null) {
+            if (placement == null || placement.getOrigin() == null) {
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.no_placement_selected");
                 this.statusIsError = true;
+                this.saveGuiState();
+                this.initGui();
                 return;
             }
-
-            BlockPos origin = placement.getOrigin();
-            this.startXField.setTextWrapper(String.valueOf(origin.getX()));
-            this.startZField.setTextWrapper(String.valueOf(origin.getZ()));
 
             Rotation rot = placement.getRotation();
             this.alignerFacing = PearlCalculator.Direction.fromAlignerRotation(rot);
@@ -1003,9 +1508,23 @@ public class GuiReturnCannon extends GuiBase {
                 this.mirrorAlignerBtn.setDisplayString(this.getMirrorBtnLabel());
             }
 
+            BlockPos origin = placement.getOrigin();
+            String pName = (placement.getName() != null) ? placement.getName().toLowerCase(Locale.ROOT) : "";
+            if (pName.contains("cannon") && !pName.contains("aligner")) {
+                origin = ReturnCannonAssembler.getPearlPosFromPlacementOrigin(origin, rot, this.mirrorMode);
+            } else if (pName.contains("aligner")) {
+                origin = ReturnCannonAssembler.getPearlPosFromAlignerPlacement(origin, rot, this.mirrorMode);
+            }
+            if (origin != null) {
+                if (this.startXField != null) this.startXField.setTextWrapper(String.valueOf(origin.getX()));
+                if (this.startZField != null) this.startZField.setTextWrapper(String.valueOf(origin.getZ()));
+            }
+
+            int dispX = (origin != null) ? origin.getX() : 0;
+            int dispZ = (origin != null) ? origin.getZ() : 0;
             String dirName = StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT));
             this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.synced_from_placement",
-                    origin.getX(), origin.getZ(), dirName, this.getMirrorBtnLabel());
+                    dispX, dispZ, dirName, this.getMirrorBtnLabel());
             this.statusIsError = false;
             String savedMsg = this.statusMessage;
             this.runCalculation();
@@ -1013,11 +1532,15 @@ public class GuiReturnCannon extends GuiBase {
             this.statusIsError = false;
             return;
         } catch (Throwable t) {
-            this.statusMessage = "Sync error: " + t.getMessage();
+            String msg = t.getMessage();
+            if (msg == null) msg = t.getClass().getSimpleName();
+            this.statusMessage = "Sync error: " + msg;
             this.statusIsError = true;
         }
         this.saveGuiState();
-        this.initGui();
+        try {
+            this.initGui();
+        } catch (Throwable ignored) {}
     }
 
     private class GuiReturnCannonSave extends GuiSchematicSave {
