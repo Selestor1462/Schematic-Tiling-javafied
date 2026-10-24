@@ -12,13 +12,17 @@ import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.malilib.gui.GuiBase;
 
 import schematic.tiling.cannon.PearlCalculator;
+import schematic.tiling.client.gui.GuiReturnCannon;
 import schematic.tiling.client.gui.GuiReturnCannonDebug;
+import schematic.tiling.client.util.ChunkFlightRouteRenderer;
 
 public class SchematicTilingJavafiedClient implements ClientModInitializer {
 	private static boolean pendingOpenDebugGui = false;
 
 	@Override
 	public void onInitializeClient() {
+		ChunkFlightRouteRenderer.init();
+		schematic.tiling.client.util.PearlTrajectoryLineRenderer.init();
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (pendingOpenDebugGui) {
 				pendingOpenDebugGui = false;
@@ -49,6 +53,15 @@ public class SchematicTilingJavafiedClient implements ClientModInitializer {
 							return 1;
 						})
 					)
+				)
+				.then(ClientCommandManager.literal("hud")
+					.executes(ctx -> {
+						ChunkFlightRouteRenderer.toggleHud();
+						GuiReturnCannon.setLastShowRouteHud(ChunkFlightRouteRenderer.isHudEnabled());
+						String state = ChunkFlightRouteRenderer.isHudEnabled() ? "\u00a7aVISIBLE" : "\u00a7cCLOAKED/HIDDEN";
+						ctx.getSource().sendFeedback(Component.literal("\u00a76[Schematic Tiling] \u00a7fRoute scan HUD is now " + state + "."));
+						return 1;
+					})
 				)
 			);
 		});

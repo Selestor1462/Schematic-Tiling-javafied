@@ -184,7 +184,23 @@ public class PearlCalculator {
         public String toString() {
             return String.format(Locale.ROOT, "(%.2f, %.2f, %.2f)", this.x, this.y, this.z);
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Space3D other)) return false;
+            return Double.compare(other.x, this.x) == 0
+                    && Double.compare(other.y, this.y) == 0
+                    && Double.compare(other.z, this.z) == 0;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(this.x, this.y, this.z);
+        }
     }
+
+    public static final int ABSOLUTE_MAX_TNT = 209;
 
     public static class CannonSettings {
         public Space3D pearlPos = new Space3D(0.0, 172.47373832068837, 0.0);
@@ -195,11 +211,33 @@ public class PearlCalculator {
         public Space3D seTNT = new Space3D(0.884999990463257, 172.625, 0.884999990463257);
         public LayoutDirection defaultRed = LayoutDirection.SOUTH_EAST;
         public LayoutDirection defaultBlue = LayoutDirection.NORTH_WEST;
-        public int maxTNT = 209;
+        public int maxTNT = ABSOLUTE_MAX_TNT;
         public double pearlAdjustedY = 170.0;
 
         public int getStartY() {
             return (int) Math.round(this.pearlAdjustedY);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof CannonSettings other)) return false;
+            return this.maxTNT == other.maxTNT
+                    && Double.compare(other.pearlAdjustedY, this.pearlAdjustedY) == 0
+                    && Objects.equals(this.pearlPos, other.pearlPos)
+                    && Objects.equals(this.pearlMotion, other.pearlMotion)
+                    && Objects.equals(this.nwTNT, other.nwTNT)
+                    && Objects.equals(this.neTNT, other.neTNT)
+                    && Objects.equals(this.swTNT, other.swTNT)
+                    && Objects.equals(this.seTNT, other.seTNT)
+                    && this.defaultRed == other.defaultRed
+                    && this.defaultBlue == other.defaultBlue;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(this.pearlPos, this.pearlMotion, this.nwTNT, this.neTNT,
+                    this.swTNT, this.seTNT, this.defaultRed, this.defaultBlue, this.maxTNT, this.pearlAdjustedY);
         }
     }
 
@@ -238,7 +276,7 @@ public class PearlCalculator {
             if (root.has("CannonSettings") && root.getAsJsonArray("CannonSettings").size() > 0) {
                 JsonObject cs = root.getAsJsonArray("CannonSettings").get(0).getAsJsonObject();
                 if (cs.has("MaxTNT")) {
-                    settings.maxTNT = cs.get("MaxTNT").getAsInt();
+                    settings.maxTNT = Math.min(ABSOLUTE_MAX_TNT, Math.max(1, cs.get("MaxTNT").getAsInt()));
                 }
                 if (cs.has("DefaultRedDirection")) {
                     settings.defaultRed = parseLayoutDirection(cs.get("DefaultRedDirection").getAsString());
@@ -335,6 +373,22 @@ public class PearlCalculator {
 
         public int getTotalTNT() {
             return this.redTNT + this.blueTNT;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof CalculationResult that)) return false;
+            return this.redTNT == that.redTNT
+                    && this.blueTNT == that.blueTNT
+                    && this.tick == that.tick
+                    && this.direction == that.direction
+                    && Objects.equals(this.catchBlockPos, that.catchBlockPos);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(this.redTNT, this.blueTNT, this.tick, this.direction, this.catchBlockPos);
         }
     }
 
@@ -511,7 +565,8 @@ public class PearlCalculator {
                         int r = cr + ro;
                         int b = cb + bo;
                         if (r < 0 || b < 0) continue;
-                        if (settings.maxTNT > 0 && Math.max(r, b) > settings.maxTNT) continue;
+                        int effectiveMaxTnt = settings.maxTNT > 0 ? Math.min(ABSOLUTE_MAX_TNT, settings.maxTNT) : ABSOLUTE_MAX_TNT;
+                        if (Math.max(r, b) > effectiveMaxTnt) continue;
 
                         long key = (((long) r) << 32) | (b & 0xFFFFFFFFL);
                         candidateMap.computeIfAbsent(key, k -> new HashSet<>()).addAll(ticks);
@@ -598,13 +653,19 @@ public class PearlCalculator {
                     int rDuperSize = roundUpToDuperSize(r);
                     int bDuperSize = roundUpToDuperSize(b);
 
+                    // If catcher block is placed right on the bedrock roof (Y <= 128),
+                    // the pearl collides with the bedrock/catcher floor at T+1, so landing pos and catcher pos are the same.
+                    // On any other encoding (flying above roof), landing pos is at Tick T and catcher block is at Tick T+1.
+                    boolean landsOnBedrock = (catchBlock.getY() <= NETHER_ROOF_MIN_Y);
+                    Space3D landingPos = landsOnBedrock ? worldCatch : worldArrival;
+
                     results.add(new CalculationResult(
                             r, b,
                             rDuperSize, bDuperSize,
                             flightDir,
                             bestTick,
                             Math.sqrt(bestDistSq),
-                            worldArrival,
+                            landingPos,
                             worldCatch,
                             catchBlock
                     ));
