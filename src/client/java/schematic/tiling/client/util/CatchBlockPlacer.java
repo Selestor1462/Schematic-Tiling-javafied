@@ -73,7 +73,7 @@ public class CatchBlockPlacer implements IClientTickHandler {
             int cx = this.targetPos.getX() >> 4;
             int cz = this.targetPos.getZ() >> 4;
 
-            boolean hasChunk = mc.level != null && mc.level.hasChunk(cx, cz);
+            boolean hasChunk = mc.level != null && schematic.tiling.cannon.PearlFlightSimulator.isChunkLoaded(mc.level, cx, cz);
             if (hasChunk) {
                 this.chunkLoadedTicks++;
             }

@@ -55,6 +55,7 @@ public class GuiCannonBlockPalette extends GuiBase {
     @Override
     public void initGui() {
         super.initGui();
+        fi.dy.masa.malilib.gui.wrappers.TextFieldType.STRING.setMaxLength(256);
         this.clearElements();
 
         int dialogWidth = DIALOG_WIDTH;
@@ -94,7 +95,6 @@ public class GuiCannonBlockPalette extends GuiBase {
             String curSearch = (this.searchField != null) ? this.searchField.getTextWrapper() : "";
 
             this.searchField = new GuiTextFieldGeneric(searchX, searchY, searchW, 16, this.font);
-            this.searchField.setMaxLengthWrapper(64);
             this.searchField.setTextWrapper(curSearch);
             this.searchField.setResponder(val -> {
                 this.scrollBar.setValue(0);
