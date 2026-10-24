@@ -318,6 +318,62 @@ public class ReturnCannonAssembler {
         return new BlockPos(pearlX + offX, 128, pearlZ + offZ);
     }
 
+    public static BlockPos getPearlPosFromPlacementOrigin(BlockPos placementOrigin, Rotation alignerRotation, MirrorMode mirrorMode) {
+        if (placementOrigin == null) return null;
+        double ldx = -0.5;
+        double ldz = 0.5;
+        if (mirrorMode != null) {
+            if (mirrorMode.flipX) ldx = -ldx;
+            if (mirrorMode.flipZ) ldz = -ldz;
+        }
+        double[] rot = rotateCoords(ldx, ldz, alignerRotation);
+        int offX = (int) Math.round(0.5 + rot[0]) - 1;
+        int offZ = (int) Math.round(0.5 + rot[1]) - 1;
+        return new BlockPos(placementOrigin.getX() - offX, placementOrigin.getY(), placementOrigin.getZ() - offZ);
+    }
+
+    /**
+     * Calculates the offset from the aligner schematic placement origin to the pearl position
+     * (the center intersection between the 4 iron bars).
+     */
+    public static int[] getAlignerPearlOffset(Rotation alignerRotation, MirrorMode mirrorMode) {
+        boolean flipX = (mirrorMode != null && mirrorMode.flipX);
+        boolean flipZ = (mirrorMode != null && mirrorMode.flipZ);
+        double x = flipX ? 1.0 : 0.0;
+        double z = flipZ ? 1.0 : 0.0;
+        double rx, rz;
+        switch (alignerRotation != null ? alignerRotation : Rotation.NONE) {
+            case CLOCKWISE_90 -> {
+                rx = 1.0 - z;
+                rz = x;
+            }
+            case CLOCKWISE_180 -> {
+                rx = 1.0 - x;
+                rz = 1.0 - z;
+            }
+            case COUNTERCLOCKWISE_90 -> {
+                rx = z;
+                rz = 1.0 - x;
+            }
+            default -> {
+                rx = x;
+                rz = z;
+            }
+        }
+        return new int[]{(int) Math.round(rx), (int) Math.round(rz)};
+    }
+
+    public static BlockPos getAlignerPlacementOrigin(int pearlX, int pearlZ, Rotation alignerRotation, MirrorMode mirrorMode) {
+        int[] off = getAlignerPearlOffset(alignerRotation, mirrorMode);
+        return new BlockPos(pearlX - off[0], 128, pearlZ - off[1]);
+    }
+
+    public static BlockPos getPearlPosFromAlignerPlacement(BlockPos placementOrigin, Rotation alignerRotation, MirrorMode mirrorMode) {
+        if (placementOrigin == null) return null;
+        int[] off = getAlignerPearlOffset(alignerRotation, mirrorMode);
+        return new BlockPos(placementOrigin.getX() + off[0], placementOrigin.getY(), placementOrigin.getZ() + off[1]);
+    }
+
     /**
      * Replaces excess TNT blocks with red concrete, keeping TNT packed in full rows
      * plus at most one partial row (closest to the duper output / center) in row x = 1
