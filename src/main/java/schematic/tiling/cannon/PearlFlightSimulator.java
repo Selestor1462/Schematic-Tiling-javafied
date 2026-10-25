@@ -206,6 +206,28 @@ public class PearlFlightSimulator {
         }
     }
 
+    public static void rescanLoadedChunks(Level level) {
+        if (level == null) return;
+        sRouteSimulations.clear();
+        if (sActiveStartPos != null && sCandidateSolutions != null && !sCandidateSolutions.isEmpty()) {
+            for (PearlCalculator.CalculationResult sol : sCandidateSolutions) {
+                simulate(sActiveStartPos, sol, sActiveSettings, level);
+            }
+        }
+        sVerifiedChunksVersion++;
+    }
+
+    public static SimulationResult recheckRoute(Level level, String routeKey) {
+        if (level == null || routeKey == null) return null;
+        RouteTrajectory traj = sTrajectoryCache.get(routeKey);
+        if (traj == null) return null;
+
+        sRouteSimulations.remove(routeKey);
+        SimulationResult res = simulate(traj.cannonStartPos, traj.solution, sActiveSettings, level);
+        sVerifiedChunksVersion++;
+        return res;
+    }
+
     public static BlockPos getActiveStartPos() {
         return sActiveStartPos;
     }
@@ -394,6 +416,21 @@ public class PearlFlightSimulator {
         return res;
     }
 
+    public static boolean isObstacleCleared(Level world, BlockPos pos) {
+        if (world == null || pos == null) return false;
+        if (!isChunkLoaded(world, pos.getX() >> 4, pos.getZ() >> 4)) return false;
+        try {
+            BlockState bs = world.getBlockState(pos);
+            Level schemWorld = getSchematicWorld();
+            BlockState schemBs = (schemWorld != null) ? schemWorld.getBlockState(pos) : null;
+            boolean noWorldCol = bs.isAir() || bs.getCollisionShape(world, pos).isEmpty();
+            boolean noSchemCol = (schemBs == null || schemBs.isAir() || schemBs.getCollisionShape(schemWorld, pos).isEmpty());
+            return noWorldCol && noSchemCol;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public static SimulationResult simulate(
             BlockPos cannonStartPos,
             PearlCalculator.CalculationResult solution,
@@ -420,7 +457,9 @@ public class PearlFlightSimulator {
                     Level schemWorld = getSchematicWorld();
                     BlockState cur = level.getBlockState(existing.collisionPos);
                     BlockState schemCur = (schemWorld != null) ? schemWorld.getBlockState(existing.collisionPos) : null;
-                    if (cur.isAir() && (schemCur == null || schemCur.isAir())) {
+                    boolean noWorldCol = cur.isAir() || cur.getCollisionShape(level, existing.collisionPos).isEmpty();
+                    boolean noSchemCol = (schemCur == null || schemCur.isAir() || schemCur.getCollisionShape(schemWorld, existing.collisionPos).isEmpty());
+                    if (noWorldCol && noSchemCol) {
                         existing = null;
                         sRouteSimulations.remove(routeKey);
                     }
@@ -462,7 +501,15 @@ public class PearlFlightSimulator {
         // If no collision detected in loaded chunks, but an existing verified collision was recorded and block still exists
         if (status == FlightStatus.CLEAR && existing != null && existing.status == FlightStatus.COLLISION && existing.collisionPos != null) {
             boolean isColLoaded = (level != null) && isChunkLoaded(level, existing.collisionPos.getX() >> 4, existing.collisionPos.getZ() >> 4);
-            boolean blockStillExists = !isColLoaded || (level != null && !level.getBlockState(existing.collisionPos).isAir());
+            boolean blockStillExists = !isColLoaded;
+            if (isColLoaded && level != null) {
+                BlockState cur = level.getBlockState(existing.collisionPos);
+                Level schemWorld = getSchematicWorld();
+                BlockState schemCur = (schemWorld != null) ? schemWorld.getBlockState(existing.collisionPos) : null;
+                boolean worldSolid = !cur.isAir() && !cur.getCollisionShape(level, existing.collisionPos).isEmpty();
+                boolean schemSolid = (schemCur != null && !schemCur.isAir() && !schemCur.getCollisionShape(schemWorld, existing.collisionPos).isEmpty());
+                blockStillExists = worldSolid || schemSolid;
+            }
             if (blockStillExists) {
                 collisionPos = existing.collisionPos;
                 collisionState = existing.collisionBlockState;
@@ -553,7 +600,9 @@ public class PearlFlightSimulator {
                     Level schemWorld = getSchematicWorld();
                     BlockState cur = level.getBlockState(existing.collisionPos);
                     BlockState schemCur = (schemWorld != null) ? schemWorld.getBlockState(existing.collisionPos) : null;
-                    if (cur.isAir() && (schemCur == null || schemCur.isAir())) {
+                    boolean noWorldCol = cur.isAir() || cur.getCollisionShape(level, existing.collisionPos).isEmpty();
+                    boolean noSchemCol = (schemCur == null || schemCur.isAir() || schemCur.getCollisionShape(schemWorld, existing.collisionPos).isEmpty());
+                    if (noWorldCol && noSchemCol) {
                         existing = null;
                         sRouteSimulations.remove(rKey);
                     }

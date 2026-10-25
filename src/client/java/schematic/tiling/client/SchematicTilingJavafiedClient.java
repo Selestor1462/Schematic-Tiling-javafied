@@ -63,6 +63,20 @@ public class SchematicTilingJavafiedClient implements ClientModInitializer {
 						return 1;
 					})
 				)
+				.then(ClientCommands.literal("rescan")
+					.executes(ctx -> {
+						net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+						if (client.level != null) {
+							ChunkFlightRouteRenderer.rescan(client.level);
+							int colCount = schematic.tiling.cannon.PearlFlightSimulator.getCollidingRoutesCount();
+							String colStr = (colCount == 0)
+									? "\u00a7a0 collisions detected (all clear)!"
+									: String.format(java.util.Locale.ROOT, "\u00a7c%d collision%s detected!", colCount, colCount == 1 ? "" : "s");
+							ctx.getSource().sendFeedback(Component.literal("\u00a76[Schematic Tiling] \u00a7fRoutes rescanned. " + colStr));
+						}
+						return 1;
+					})
+				)
 			);
 		});
 	}
