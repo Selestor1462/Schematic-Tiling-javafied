@@ -1643,73 +1643,113 @@ public class GuiReturnCannon extends GuiBase {
             }
         }
 
+        private static boolean isSameFile(Object file1, Object file2) {
+            if (file1 == null || file2 == null) return false;
+            try {
+                Path p1 = (file1 instanceof Path p) ? p.toAbsolutePath().normalize() : ((java.io.File) file1).toPath().toAbsolutePath().normalize();
+                Path p2 = (file2 instanceof Path p) ? p.toAbsolutePath().normalize() : ((java.io.File) file2).toPath().toAbsolutePath().normalize();
+                return p1.equals(p2);
+            } catch (Throwable t) {
+                return file1.toString().equals(file2.toString());
+            }
+        }
+
         @Override
         protected IButtonActionListener createButtonListener(GuiSchematicSaveBase.ButtonType type) {
-            IButtonActionListener originalListener = super.createButtonListener(type);
             if (type == GuiSchematicSaveBase.ButtonType.SAVE) {
                 return (button, mouseButton) -> {
-                    originalListener.actionPerformedWithButton(button, mouseButton);
-
-                    if (!this.processedPostSave && this.schematic != null && !this.schematic.getMetadata().wasModifiedSinceSaved()) {
-                        this.processedPostSave = true;
-
-                        File dir = this.getListWidget().getCurrentDirectory();
-                        String text = this.getTextFieldText();
-                        String fileName = FileNameUtils.generateSimpleUnicodeSafeFileName(text);
-                        if (FileNameUtils.doesFileNameContainIllegalCharacters(fileName)) {
-                            fileName = FileNameUtils.generateSafeFileName(fileName);
-                        }
-                        if (!fileName.endsWith(".litematic")) {
-                            fileName = fileName + ".litematic";
-                        }
-                        File savedFile = (dir != null) ? new File(dir, fileName) : null;
-
-                        LitematicaSchematic targetSchem = null;
-                        if (savedFile != null && savedFile.isFile()) {
-                            for (LitematicaSchematic existing : new ArrayList<>(SchematicHolder.getInstance().getAllSchematics())) {
-                                if (savedFile.equals(existing.getFile())) {
-                                    SchematicHolder.getInstance().removeSchematic(existing);
-                                }
-                            }
-                            if (this.loadToMemory) {
-                                targetSchem = SchematicHolder.getInstance().getOrLoad(savedFile);
-                            } else {
-                                FileType fileType = FileType.fromFile(savedFile);
-                                targetSchem = LitematicaSchematic.createFromFile(savedFile.getParentFile(), savedFile.getName(), fileType);
-                            }
-                        }
-
-                        if (targetSchem == null) {
-                            targetSchem = this.schematic;
-                            if (this.loadToMemory) {
-                                SchematicHolder.getInstance().addSchematic(targetSchem, false);
-                            }
-                        }
-
-                        removeReferenceAligner();
-
-                        if (this.createPlacement) {
-                            String name = targetSchem.getFile() != null ?
-                                    FileNameUtils.getFileNameWithoutExtension(targetSchem.getFile().getName()) :
-                                    this.placementName;
-                            SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
-                            SchematicPlacement placement = SchematicPlacement.createFor(targetSchem, this.placementOrigin, name, true, true);
-                            manager.addSchematicPlacement(placement, true);
-                            manager.setSelectedSchematicPlacement(placement);
-                        }
-
-                        GuiReturnCannon.this.statusMessage = String.format(Locale.ROOT,
-                                "Generated & Saved! Catcher: [%d, %d, %d]",
-                                this.sol.catchBlockPos.getX(), this.sol.catchBlockPos.getY(), this.sol.catchBlockPos.getZ());
-                        GuiReturnCannon.this.statusIsError = false;
-
-                        InfoUtils.showGuiOrInGameMessage(MessageType.SUCCESS,
-                                "[Return Cannon] Saved! Catcher Block: [%d, %d, %d]",
-                                this.sol.catchBlockPos.getX(), this.sol.catchBlockPos.getY(), this.sol.catchBlockPos.getZ());
+                    if (this.getListWidget() == null) {
+                        return;
                     }
+
+                    File dir = this.getListWidget().getCurrentDirectory();
+                    String text = this.getTextFieldText();
+                    String fileName = FileNameUtils.generateSimpleUnicodeSafeFileName(text);
+                    if (FileNameUtils.doesFileNameContainIllegalCharacters(fileName)) {
+                        fileName = FileNameUtils.generateSafeFileName(fileName);
+                    }
+
+                    if (dir == null || !dir.isDirectory()) {
+                        this.addMessage(MessageType.ERROR, "litematica.error.schematic_save.invalid_directory", dir != null ? dir.getAbsolutePath() : "");
+                        return;
+                    }
+
+                    if (fileName.isEmpty()) {
+                        this.addMessage(MessageType.ERROR, "litematica.error.schematic_save.invalid_schematic_name", fileName);
+                        return;
+                    }
+
+                    if (!fileName.endsWith(".litematic")) {
+                        fileName = fileName + ".litematic";
+                    }
+
+                    File savedFile = new File(dir, fileName);
+
+                    // Evict existing schematic from SchematicHolder and placements from manager
+                    SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+                    for (LitematicaSchematic existing : new ArrayList<>(SchematicHolder.getInstance().getAllSchematics())) {
+                        if (isSameFile(existing.getFile(), savedFile)) {
+                            manager.removeAllPlacementsOfSchematic(existing);
+                            SchematicHolder.getInstance().removeSchematic(existing);
+                        }
+                    }
+
+                    // Also remove any existing placement with matching placement name
+                    String placementBaseName = FileNameUtils.getFileNameWithoutExtension(fileName);
+                    for (SchematicPlacement pl : new ArrayList<>(manager.getAllSchematicsPlacements())) {
+                        if (pl != null && (placementBaseName.equals(pl.getName()) || this.placementName.equals(pl.getName()))) {
+                            manager.removeSchematicPlacement(pl);
+                        }
+                    }
+
+                    // Write to file with override = true
+                    if (this.schematic != null) {
+                        if (this.schematic.writeToFile(dir, fileName, true)) {
+                            this.schematic.getMetadata().clearModifiedSinceSaved();
+                            this.getListWidget().refreshEntries();
+                            this.getListWidget().clearSchematicMetadataCache();
+                            this.addMessage(MessageType.SUCCESS, "litematica.message.schematic_saved_as", fileName);
+                        } else {
+                            return;
+                        }
+                    }
+
+                    LitematicaSchematic targetSchem = null;
+                    if (savedFile.isFile()) {
+                        if (this.loadToMemory) {
+                            targetSchem = SchematicHolder.getInstance().getOrLoad(savedFile);
+                        } else {
+                            FileType fileType = FileType.fromFile(savedFile);
+                            targetSchem = LitematicaSchematic.createFromFile(savedFile.getParentFile(), savedFile.getName(), fileType);
+                        }
+                    }
+
+                    if (targetSchem == null) {
+                        targetSchem = this.schematic;
+                        if (this.loadToMemory) {
+                            SchematicHolder.getInstance().addSchematic(targetSchem, false);
+                        }
+                    }
+
+                    removeReferenceAligner();
+
+                    if (this.createPlacement && targetSchem != null) {
+                        SchematicPlacement placement = SchematicPlacement.createFor(targetSchem, this.placementOrigin, placementBaseName, true, true);
+                        manager.addSchematicPlacement(placement, true);
+                        manager.setSelectedSchematicPlacement(placement);
+                    }
+
+                    GuiReturnCannon.this.statusMessage = String.format(Locale.ROOT,
+                            "Generated & Saved! Catcher: [%d, %d, %d]",
+                            this.sol.catchBlockPos.getX(), this.sol.catchBlockPos.getY(), this.sol.catchBlockPos.getZ());
+                    GuiReturnCannon.this.statusIsError = false;
+
+                    InfoUtils.showGuiOrInGameMessage(MessageType.SUCCESS,
+                            "[Return Cannon] Saved! Catcher Block: [%d, %d, %d]",
+                            this.sol.catchBlockPos.getX(), this.sol.catchBlockPos.getY(), this.sol.catchBlockPos.getZ());
                 };
             }
-            return originalListener;
+            return super.createButtonListener(type);
         }
     }
 
