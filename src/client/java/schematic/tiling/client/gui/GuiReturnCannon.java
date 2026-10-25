@@ -284,8 +284,19 @@ public class GuiReturnCannon extends GuiBase {
             boolean isCannonSelection = selection.getName() != null &&
                     (selection.getName().toLowerCase(Locale.ROOT).contains("aligner")
                      || selection.getName().toLowerCase(Locale.ROOT).contains("cannon"));
-            if (lastSX == null || isCannonSelection) {
-                BlockPos origin = selection.getEffectiveOrigin();
+            // Only initialize start coordinates from selection if start coordinates are not yet set.
+            // Do NOT overwrite user's configured cannon coordinates when opening GUI near destination!
+            if (lastSX == null && isCannonSelection) {
+                BlockPos origin = null;
+                // If selection has subregions, prefer subregion named "cannon" or "aligner" rather than catcher/landing
+                for (var box : selection.getAllSubRegionBoxes()) {
+                    if (box.getName() != null && (box.getName().toLowerCase(Locale.ROOT).contains("cannon")
+                            || box.getName().toLowerCase(Locale.ROOT).contains("aligner"))) {
+                        origin = box.getPos1();
+                        break;
+                    }
+                }
+                if (origin == null) origin = selection.getEffectiveOrigin();
                 if (origin == null) origin = selection.getExplicitOrigin();
                 if (origin == null && !selection.getAllSubRegionBoxes().isEmpty()) {
                     origin = selection.getAllSubRegionBoxes().get(0).getPos1();
@@ -556,16 +567,35 @@ public class GuiReturnCannon extends GuiBase {
         // Determine default start position from selection or player
         BlockPos defaultPos = null;
         if (this.selection != null) {
-            defaultPos = this.selection.getEffectiveOrigin();
-            if (defaultPos == null) {
-                defaultPos = this.selection.getExplicitOrigin();
+            for (var box : this.selection.getAllSubRegionBoxes()) {
+                if (box.getName() != null && (box.getName().toLowerCase(Locale.ROOT).contains("cannon")
+                        || box.getName().toLowerCase(Locale.ROOT).contains("aligner"))) {
+                    defaultPos = box.getPos1();
+                    break;
+                }
             }
+            if (defaultPos == null) defaultPos = this.selection.getEffectiveOrigin();
+            if (defaultPos == null) defaultPos = this.selection.getExplicitOrigin();
             if (defaultPos == null && !this.selection.getAllSubRegionBoxes().isEmpty()) {
                 defaultPos = this.selection.getAllSubRegionBoxes().get(0).getPos1();
             }
         }
         if (defaultPos == null && this.mc != null && this.mc.player != null) {
-            defaultPos = this.mc.player.blockPosition();
+            BlockPos pPos = this.mc.player.blockPosition();
+            boolean nearDest = false;
+            if (lastDX != null && lastDZ != null) {
+                try {
+                    double dx = Double.parseDouble(lastDX.trim());
+                    double dz = Double.parseDouble(lastDZ.trim());
+                    double distSq = (pPos.getX() - dx) * (pPos.getX() - dx) + (pPos.getZ() - dz) * (pPos.getZ() - dz);
+                    if (distSq < 10000) {
+                        nearDest = true;
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (!nearDest) {
+                defaultPos = pPos;
+            }
         }
         if (defaultPos == null) {
             defaultPos = BlockPos.ZERO;
