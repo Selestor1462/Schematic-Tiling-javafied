@@ -443,6 +443,25 @@ public class PearlFlightSimulator {
         }
     }
 
+    public static boolean isSegmentAnyChunkLoaded(Level level, RouteTrajectory traj, int t, int cxStart, int czStart, int cxEnd, int czEnd) {
+        if (level == null) return false;
+        if (isChunkLoaded(level, cxStart, czStart) || isChunkLoaded(level, cxEnd, czEnd)) {
+            return true;
+        }
+        if (traj != null && traj.ticksByChunk != null) {
+            for (Map.Entry<Long, List<Integer>> entry : traj.ticksByChunk.entrySet()) {
+                if (entry.getValue().contains(t)) {
+                    int cx = chunkKeyX(entry.getKey());
+                    int cz = chunkKeyZ(entry.getKey());
+                    if (isChunkLoaded(level, cx, cz)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     public static SimulationResult simulate(
             BlockPos cannonStartPos,
             PearlCalculator.CalculationResult solution,
@@ -495,8 +514,8 @@ public class PearlFlightSimulator {
                 int cxEnd = ((int) Math.floor(pCur.pos.x)) >> 4;
                 int czEnd = ((int) Math.floor(pCur.pos.z)) >> 4;
 
-                // Check collision if start or end chunk of segment is loaded
-                if (isChunkLoaded(level, cxStart, czStart) || isChunkLoaded(level, cxEnd, czEnd)) {
+                // Check collision if any chunk traversed by this segment is loaded
+                if (isSegmentAnyChunkLoaded(level, traj, t, cxStart, czStart, cxEnd, czEnd)) {
                     ObstacleHit hit = testTickCollision(level, pPrev.pos, pCur.pos, t, traj.solution, traj.cannonStartPos);
                     if (hit != null) {
                         collisionPos = hit.pos;
@@ -747,12 +766,16 @@ public class PearlFlightSimulator {
                     BlockHitResult worldHit = level.clip(ctx);
                     BlockPos worldHitPos = (worldHit != null && worldHit.getType() == HitResult.Type.BLOCK) ? worldHit.getBlockPos() : null;
                     if (worldHitPos != null && !isChunkLoaded(level, worldHitPos.getX() >> 4, worldHitPos.getZ() >> 4)) {
-                        worldHit = null;
-                        worldHitPos = null;
+                        currentFrom = worldHit.getLocation().add(rayStep.scale(0.5));
+                        continue;
                     }
 
                     BlockHitResult schemHit = (schemWorld != null) ? schemWorld.clip(ctx) : null;
                     BlockPos schemHitPos = (schemHit != null && schemHit.getType() == HitResult.Type.BLOCK) ? schemHit.getBlockPos() : null;
+                    if (schemHitPos != null && !isChunkLoaded(level, schemHitPos.getX() >> 4, schemHitPos.getZ() >> 4)) {
+                        currentFrom = schemHit.getLocation().add(rayStep.scale(0.5));
+                        continue;
+                    }
 
                     BlockHitResult hit = null;
                     BlockPos hitPos = null;
@@ -937,7 +960,9 @@ public class PearlFlightSimulator {
             if (state.isAir() && schemWorld != null) {
                 state = schemWorld.getBlockState(bPos);
             }
-            if (state != null && (state.is(Blocks.COBWEB) || state.is(Blocks.POWDER_SNOW))) {
+            if (state != null && (state.is(Blocks.COBWEB) || state.is(Blocks.POWDER_SNOW)
+                    || state.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock
+                    || state.getBlock() instanceof net.minecraft.world.level.block.TrapDoorBlock)) {
                 boolean isTargetCatcher = (tick >= solution.tick
                         && (bPos.equals(solution.catchBlockPos) || bPos.distManhattan(solution.catchBlockPos) <= 1));
 
