@@ -1177,7 +1177,7 @@ public class ReturnCannonAssembler {
         LitematicaSchematic schematic = assembleCannon(alignerRotation, mirrorMode, calcResult, settings, schematicName, cannonStartPos, generatePowderSnowLanding);
         String safeName = FileNameUtils.generateSafeFileName(schematicName);
         Files.createDirectories(outputDirectory);
-        schematic.writeToFile(outputDirectory, safeName, false);
+        schematic.writeToFile(outputDirectory, safeName, true);
         Path outputFile = outputDirectory.resolve(safeName + ".litematic");
         return new GenerationResult(schematic, outputFile);
     }
