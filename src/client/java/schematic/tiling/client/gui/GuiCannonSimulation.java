@@ -30,7 +30,7 @@ public class GuiCannonSimulation extends GuiBase {
     }
 
     private final GuiReturnCannon parentGui;
-    private final SimulationResult sim;
+    private SimulationResult sim;
     private ViewMode viewMode = ViewMode.OVERVIEW;
     private int tickPage = 0;
 
@@ -237,15 +237,43 @@ public class GuiCannonSimulation extends GuiBase {
             this.initGui();
         });
 
-        ButtonGeneric resetBtn = new ButtonGeneric(startX + 200, bottomY, 80, 20, StringUtils.translate("schematic_tiling.gui.cannon.sim.button.reset_scan"));
+        ButtonGeneric resetBtn = new ButtonGeneric(startX + 200, bottomY, 80, 20, StringUtils.translate("schematic_tiling.gui.cannon.sim.button.rescan"));
+        resetBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.sim.hover.rescan"),
+                StringUtils.translate("schematic_tiling.gui.cannon.sim.hover.rescan_desc")
+        );
         this.addButton(resetBtn, (btn, mouse) -> {
-            PearlFlightSimulator.clearRouteCache();
-            ChunkFlightRouteRenderer.clearTrackedRoute();
-            PearlTrajectoryLineRenderer.clearTrajectory();
-            if (this.parentGui != null) {
-                this.parentGui.clearSimulationCache();
+            if (this.mc != null && this.mc.level != null) {
+                if (GuiBase.isShiftDown()) {
+                    PearlFlightSimulator.clearRouteCache();
+                    ChunkFlightRouteRenderer.clearTrackedRoute();
+                    PearlTrajectoryLineRenderer.clearTrajectory();
+                    if (this.parentGui != null) {
+                        this.parentGui.clearSimulationCache();
+                    }
+                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.sim.status.cache_cleared");
+                } else {
+                    PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
+                    if (this.parentGui != null) {
+                        this.parentGui.clearSimulationCacheOnly();
+                    }
+                    String rKey = PearlFlightSimulator.getRouteKey(this.sim.cannonStartPos, this.sim.solution);
+                    SimulationResult updated = PearlFlightSimulator.getRouteSimulation(rKey);
+                    if (updated == null && this.sim.cannonStartPos != null && this.sim.solution != null) {
+                        updated = PearlFlightSimulator.simulate(this.sim.cannonStartPos, this.sim.solution, this.parentGui != null ? this.parentGui.getSettings() : PearlFlightSimulator.getActiveSettings(), this.mc.level);
+                    }
+                    if (updated != null) {
+                        this.sim = updated;
+                        if (PearlTrajectoryLineRenderer.isDisplaying()) {
+                            PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                        }
+                        if (ChunkFlightRouteRenderer.isTracked(updated)) {
+                            ChunkFlightRouteRenderer.trackRoute(updated, this.parentGui != null ? this.parentGui.getSettings() : null);
+                        }
+                    }
+                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.sim.status.rescanned");
+                }
             }
-            this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.sim.status.cache_cleared");
             this.statusIsError = false;
             this.initGui();
         });

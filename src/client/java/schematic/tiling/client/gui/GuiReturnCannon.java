@@ -194,18 +194,21 @@ public class GuiReturnCannon extends GuiBase {
             this.lastVerifiedChunksVersion = currentVersion;
             if (this.allSolutions != null && !this.allSolutions.isEmpty()) {
                 for (CalculationResult r : this.allSolutions) {
-                    SimulationResult cur = sSimulationCache.get(r);
-                    if (cur == null || cur.status != PearlFlightSimulator.FlightStatus.COLLISION) {
-                        sSimulationCache.remove(r);
-                        this.getOrRunSimulation(r);
-                    }
+                    sSimulationCache.remove(r);
+                    this.getOrRunSimulation(r);
                 }
             }
         }
     }
 
+    public void clearSimulationCacheOnly() {
+        sSimulationCache.clear();
+        this.lastVerifiedChunksVersion = -1;
+    }
+
     public void clearSimulationCache() {
         sSimulationCache.clear();
+        this.lastVerifiedChunksVersion = -1;
         PearlFlightSimulator.clearRouteCache();
         PearlTrajectoryLineRenderer.clearTrajectory();
         ChunkFlightRouteRenderer.clearTrackedRoute();
@@ -961,8 +964,9 @@ public class GuiReturnCannon extends GuiBase {
                     }
                 } else {
                     if (this.mc != null && this.mc.level != null) {
-                        PearlFlightSimulator.verifyCurrentlyLoadedChunks(this.mc.level);
+                        PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
                     }
+                    this.clearSimulationCacheOnly();
                     SimulationResult selSim = this.getOrRunSimulation(sel);
                     if (selSim != null) {
                         ChunkFlightRouteRenderer.trackRoute(selSim, this.settings);
@@ -1071,6 +1075,35 @@ public class GuiReturnCannon extends GuiBase {
                         sel.catchBlockPos.getX(), sel.catchBlockPos.getY(), sel.catchBlockPos.getZ()));
                 this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.copied_catch", sel.catchBlockPos.toShortString());
                 this.statusIsError = false;
+            }
+        });
+
+        ButtonGeneric rescanBtn = new ButtonGeneric(startX + 390, row2Y, 75, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.rescan"));
+        rescanBtn.setEnabled(hasSol);
+        rescanBtn.setHoverStrings(
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.rescan"),
+                StringUtils.translate("schematic_tiling.gui.cannon.hover.rescan_desc")
+        );
+        this.addButton(rescanBtn, (btn, mouse) -> {
+            if (this.mc != null && this.mc.level != null) {
+                PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
+                this.clearSimulationCacheOnly();
+                if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
+                    CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                    SimulationResult sim = this.getOrRunSimulation(sel);
+                    if (sim != null) {
+                        if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
+                            ChunkFlightRouteRenderer.trackRoute(sim, this.settings);
+                        }
+                        if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                            PearlTrajectoryLineRenderer.displayTrajectory(sim, -1);
+                        }
+                    }
+                }
+                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.rescanned");
+                this.statusIsError = false;
+                this.saveGuiState();
+                this.initGui();
             }
         });
     }
