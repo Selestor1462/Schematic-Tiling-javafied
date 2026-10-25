@@ -1167,6 +1167,13 @@ public class GuiReturnCannon extends GuiBase {
             this.selectedSolutionIndex = this.solutions.isEmpty() ? -1 : 0;
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
                 CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
+                if (sel != null && sel.direction != null) {
+                    this.alignerFacing = sel.direction;
+                    lastAlignerFacing = sel.direction;
+                    if (this.alignerFacingBtn != null) {
+                        this.alignerFacingBtn.setDisplayString(StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT)));
+                    }
+                }
                 SimulationResult selSim = this.getOrRunSimulation(sel);
                 if (selSim != null) {
                     if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
@@ -1261,6 +1268,10 @@ public class GuiReturnCannon extends GuiBase {
             }
 
             CalculationResult sol = this.solutions.get(this.selectedSolutionIndex);
+            if (sol != null && sol.direction != null && this.alignerFacing != sol.direction) {
+                this.alignerFacing = sol.direction;
+                lastAlignerFacing = sol.direction;
+            }
 
             String rawName = (this.schematicNameField != null) ? this.schematicNameField.getTextWrapper().trim() : "";
             if (rawName.isEmpty()) {
