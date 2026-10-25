@@ -163,6 +163,20 @@ public class ChunkFlightRouteRenderer {
         }
     }
 
+    public static void restartScan(ClientLevel world) {
+        if (world == null) return;
+        PearlFlightSimulator.restartScan(world);
+        if (activeRouteKey != null) {
+            PearlFlightSimulator.SimulationResult updated = PearlFlightSimulator.getRouteSimulation(activeRouteKey);
+            if (updated != null) {
+                activeSim = updated;
+                if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                    PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                }
+            }
+        }
+    }
+
     public static PearlFlightSimulator.SimulationResult getActiveSimulation() {
         return activeSim;
     }
