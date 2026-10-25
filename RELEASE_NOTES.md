@@ -1,3 +1,15 @@
+Release 1.2.3 introduces dynamic obstacle clearing, route rescanning, and trajectory tracking improvements:
+
+### New Features
+
+- **Redo Route Scan & Dynamic Obstacle Clearing:**
+  - Added a dedicated **"Rescan"** button to the Return Cannon generator and Pearl Flight Simulation menus.
+  - Automatically detects when a collision obstacle block in loaded chunks is broken or mined, instantly updating the trajectory visualization and HUD without needing to re-open menus.
+  - Added the `/tiling rescan` client command to trigger an immediate rescan of all loaded chunks with detailed collision reporting in chat.
+  - Added Shift-click to "Rescan" in the Simulation dialog to perform a complete chunk scan reset.
+
+---
+
 Release 1.2.2 introduces the Cannon Block Palette customization menu, the "From Placement" aligner synchronization tool, and additional pearl cannon bugfixes:
 
 ### New Features
