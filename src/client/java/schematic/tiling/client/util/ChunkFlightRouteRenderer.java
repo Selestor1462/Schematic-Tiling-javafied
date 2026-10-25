@@ -117,16 +117,34 @@ public class ChunkFlightRouteRenderer implements IRenderer {
         return activeSim != null && activeRouteKey != null;
     }
 
+    public static String getActiveRouteKey() {
+        return activeRouteKey;
+    }
+
+    public static PearlCalculator.CannonSettings getActiveSettings() {
+        return activeSettings;
+    }
+
+    public static void rescan(ClientLevel world) {
+        if (world == null) return;
+        PearlFlightSimulator.rescanLoadedChunks(world);
+        if (activeRouteKey != null) {
+            PearlFlightSimulator.SimulationResult updated = PearlFlightSimulator.getRouteSimulation(activeRouteKey);
+            if (updated != null) {
+                activeSim = updated;
+                if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                    PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                }
+            }
+        }
+    }
+
     public static PearlFlightSimulator.SimulationResult getActiveSimulation() {
         return activeSim;
     }
 
     public static PearlFlightSimulator.SimulationResult getActiveSim() {
         return activeSim;
-    }
-
-    public static PearlCalculator.CannonSettings getActiveSettings() {
-        return activeSettings;
     }
 
     private static void onChunkLoaded(ClientLevel world, ChunkPos pos) {
@@ -170,6 +188,20 @@ public class ChunkFlightRouteRenderer implements IRenderer {
                 || !Objects.equals(lastRenderRouteKey, activeRouteKey)
                 || ++renderCheckTimer >= 20) {
             renderCheckTimer = 0;
+
+            if (activeSim != null && activeRouteKey != null && activeSim.status == PearlFlightSimulator.FlightStatus.COLLISION && activeSim.collisionPos != null) {
+                if (PearlFlightSimulator.isObstacleCleared(world, activeSim.collisionPos)) {
+                    PearlFlightSimulator.recheckRoute(world, activeRouteKey);
+                    PearlFlightSimulator.SimulationResult updated = PearlFlightSimulator.getRouteSimulation(activeRouteKey);
+                    if (updated != null && updated != activeSim) {
+                        activeSim = updated;
+                        if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                            PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                        }
+                    }
+                }
+            }
+
             lastRenderVersion = PearlFlightSimulator.getVerifiedChunksVersion();
             lastRenderRouteKey = activeRouteKey;
             cachedUncheckedChunks.clear();
