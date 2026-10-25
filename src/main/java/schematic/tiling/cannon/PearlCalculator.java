@@ -485,8 +485,9 @@ public class PearlCalculator {
         Space3D destPosRel = new Space3D(relDestX, 0.0, relDestZ);
 
         Space3D pearlStartPos = settings.pearlPos;
-        double yaw = pearlStartPos.angleToYaw(destPosRel);
-        List<Direction> flightDirections = Direction.fromAngleWithFallbacks(yaw);
+        // Test all four aligner directions (NORTH, SOUTH, EAST, WEST) so valid solutions
+        // with large horizontal / diagonal spread are never missed.
+        List<Direction> flightDirections = Arrays.asList(Direction.values());
 
         List<CalculationResult> results = new ArrayList<>();
         double maxDistSq = maxDistance * maxDistance;
