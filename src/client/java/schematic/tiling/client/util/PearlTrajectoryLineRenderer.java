@@ -78,10 +78,20 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
         }
     }
 
+    private static double cachedGroundY = Double.NaN;
+    private static int cachedLandingBlockY = -1;
+    private static SimulationResult lastGroundYSim = null;
+    private static int groundYCheckTimer = 0;
+    private static final BlockPos.MutableBlockPos mutLandingPos = new BlockPos.MutableBlockPos();
+
     public static void clearTrajectory() {
         sEnabled = false;
         currentSim = null;
         remainingTicks = 0;
+        cachedGroundY = Double.NaN;
+        cachedLandingBlockY = -1;
+        lastGroundYSim = null;
+        groundYCheckTimer = 0;
     }
 
     public static void toggleTrajectory(SimulationResult sim) {
@@ -113,79 +123,6 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
                 clearTrajectory();
             }
         }
-    }
-
-    private static long lastRaycastTimeMs = 0;
-    private static BlockPos cachedLandingBlockPos = null;
-    private static Vec3 cachedLandingGroundPoint = null;
-    private static int cachedLandingBlockY = -1;
-
-    private static void updateCachedGroundMarker(ClientLevel world, Space3D startPos, Space3D velocity, double finalX, double finalZ) {
-        long now = System.currentTimeMillis();
-        if (now - lastRaycastTimeMs < 1000 && cachedLandingGroundPoint != null) {
-            return;
-        }
-        lastRaycastTimeMs = now;
-
-        double vx = velocity.x;
-        double vy = velocity.y;
-        double vz = velocity.z;
-        double x = startPos.x;
-        double y = startPos.y;
-        double z = startPos.z;
-
-        cachedLandingGroundPoint = null;
-        cachedLandingBlockPos = null;
-
-        for (int step = 0; step < 200; step++) {
-            double nextX = x + vx;
-            double nextY = y + vy;
-            double nextZ = z + vz;
-
-            int bx = (int) Math.floor(nextX);
-            int by = (int) Math.floor(nextY);
-            int bz = (int) Math.floor(nextZ);
-
-            if (by < -64 || by > 320) break;
-
-            BlockPos bpos = new BlockPos(bx, by, bz);
-            if (world.hasChunkAt(bpos)) {
-                BlockState state = world.getBlockState(bpos);
-                if (!state.isAir() && state.getBlock() != Blocks.VOID_AIR) {
-                    if (state.getBlock() instanceof CarpetBlock) {
-                        cachedLandingBlockPos = bpos.below();
-                        cachedLandingGroundPoint = new Vec3(nextX, by + 0.0625, nextZ);
-                        cachedLandingBlockY = by - 1;
-                    } else {
-                        cachedLandingBlockPos = bpos;
-                        cachedLandingGroundPoint = new Vec3(nextX, by + 1.0, nextZ);
-                        cachedLandingBlockY = by;
-                    }
-                    return;
-                }
-            }
-
-            x = nextX;
-            y = nextY;
-            z = nextZ;
-            vx *= 0.99;
-            vy = (vy * 0.99) - 0.03;
-            vz *= 0.99;
-        }
-
-        int targetY = (cachedLandingBlockY != -1) ? cachedLandingBlockY : 128;
-        BlockPos fallbackPos = new BlockPos((int) Math.floor(finalX), targetY, (int) Math.floor(finalZ));
-        if (world.hasChunkAt(fallbackPos)) {
-            BlockState state = world.getBlockState(fallbackPos);
-            if (state.getBlock() instanceof CarpetBlock) {
-                cachedLandingBlockPos = fallbackPos.below();
-                cachedLandingGroundPoint = new Vec3(finalX, targetY + 0.0625, finalZ);
-                cachedLandingBlockY = targetY - 1;
-                return;
-            }
-        }
-        cachedLandingBlockPos = fallbackPos;
-        cachedLandingGroundPoint = new Vec3(finalX, targetY + 1.0, finalZ);
     }
 
     public static void renderWorld(WorldRenderContext context) {
@@ -228,55 +165,148 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
                         beamRadius);
             }
 
-            // 2. Render tick node markers
-            float nodeHalfSize = 0.09f;
+            // 2. Render prominent tick node crystals along the route
             for (int i = 0; i <= maxIdx; i++) {
                 SimulationPoint pt = pts.get(i);
-                float relT = (float) i / Math.max(1, maxIdx);
-                float[] col = getColorForTick(i, maxIdx, isCollision, colTick, relT);
+                float t = (float) i / Math.max(1, maxIdx);
+                float[] c = getColorForTick(i, maxIdx, isCollision, colTick, t);
 
-                float cx = (float) (pt.pos.x - camera.x);
-                float cy = (float) (pt.pos.y - camera.y);
-                float cz = (float) (pt.pos.z - camera.z);
+                float nodeHalf = 0.14f; // 28cm node crystal (clearly visible!)
+                float nr = c[0];
+                float ng = c[1];
+                float nb = c[2];
+                float na = c[3];
 
-                addBox(pose, lineBuffer, cx, cy, cz, nodeHalfSize, col[0], col[1], col[2], 0.95f);
+                Vec3 nodePos = pt.pos;
+
+                if (i == 0) {
+                    nodeHalf = 0.22f; // Big blue start marker
+                    nr = 0.2f; ng = 0.8f; nb = 1.0f; na = 1.0f;
+                } else if (isCollision && i == colTick) {
+                    nodeHalf = 0.28f; // Big red collision marker at impact tick
+                    nr = 1.0f; ng = 0.1f; nb = 0.1f; na = 1.0f;
+                } else if (i == maxIdx) {
+                    nodeHalf = 0.24f; // Big landing marker (green if safe, purple/crimson if after collision)
+                    if (!isCollision) {
+                        nr = 0.2f; ng = 1.0f; nb = 0.3f; na = 1.0f;
+                    } else {
+                        nr = 0.85f; ng = 0.3f; nb = 0.6f; na = 0.85f;
+                    }
+                } else {
+                    if (!isCollision || i < colTick) {
+                        nr = 1.0f; ng = 0.9f; nb = 0.2f; na = 0.95f;
+                    } else {
+                        // After collision nodes
+                        nodeHalf = 0.10f;
+                        nr = 0.85f; ng = 0.25f; nb = 0.50f; na = 0.60f;
+                    }
+                }
+
+                addBox(pose, lineBuffer,
+                        (float) (nodePos.x - camera.x),
+                        (float) (nodePos.y - camera.y),
+                        (float) (nodePos.z - camera.z),
+                        nodeHalf, nr, ng, nb, na);
             }
 
-            // 3. Render Collision block highlight
+            // 3. Highlight collision obstacle block with bright 3D wireframe edges & tinted box
             if (isCollision && currentSim.collisionPos != null) {
-                addHighlightBoxWithEdges(pose, lineBuffer, currentSim.collisionPos, camera,
-                        1.0f, 0.15f, 0.15f, 0.40f,
-                        1.0f, 0.05f, 0.05f, 0.95f);
+                BlockPos cp = currentSim.collisionPos;
+                addHighlightBoxWithEdges(pose, lineBuffer, cp, camera, 1.0f, 0.12f, 0.12f, 0.40f, 1.0f, 0.2f, 0.2f, 1.0f);
+
+                // Draw exact impact cross if known
+                if (currentSim.collisionExact != null) {
+                    Vec3 hit = currentSim.collisionExact;
+                    addBox(pose, lineBuffer,
+                            (float) (hit.x - camera.x),
+                            (float) (hit.y - camera.y),
+                            (float) (hit.z - camera.z),
+                            0.20f, 1.0f, 0.05f, 0.05f, 1.0f);
+                }
             }
 
-            // 4. Render Target/Arrival marker
-            if (!isCollision && currentSim.solution != null) {
-                SimulationPoint lastPt = pts.get(maxIdx);
-                Space3D start = new Space3D(lastPt.pos.x, lastPt.pos.y, lastPt.pos.z);
-                Space3D vel = (lastPt.motion != null) ? new Space3D(lastPt.motion.x, lastPt.motion.y, lastPt.motion.z) : new Space3D(0, 0, 0);
+            // 4. Highlight catcher block with bright emerald wireframe edges & tinted box
+            if (currentSim.solution != null && currentSim.solution.catchBlockPos != null) {
+                BlockPos catchPos = currentSim.solution.catchBlockPos;
+                addHighlightBoxWithEdges(pose, lineBuffer, catchPos, camera, 0.15f, 1.0f, 0.3f, 0.35f, 0.3f, 1.0f, 0.4f, 1.0f);
+            }
 
-                updateCachedGroundMarker(world, start, vel, lastPt.pos.x, lastPt.pos.z);
+            // 5. Render vertical drop line from pearl trajectory to actual player landing position on ground
+            if (currentSim.solution != null && currentSim.solution.worldArrivalPos != null) {
+                Space3D arr = currentSim.solution.worldArrivalPos;
+                BlockPos startPos = currentSim.cannonStartPos;
+                int defaultLandingY = (startPos != null && startPos.getY() < 150) ? startPos.getY() : 128;
 
-                if (cachedLandingBlockPos != null) {
-                    addHighlightBoxWithEdges(pose, lineBuffer, cachedLandingBlockPos, camera,
-                            0.15f, 1.0f, 0.30f, 0.35f,
-                            0.10f, 1.0f, 0.20f, 0.95f);
+                if (lastGroundYSim != currentSim || Double.isNaN(cachedGroundY) || cachedLandingBlockY < 0 || ++groundYCheckTimer >= 20) {
+                    groundYCheckTimer = 0;
+                    lastGroundYSim = currentSim;
+                    int foundBlockY = -1;
+                    double foundGroundY = defaultLandingY + 1.0;
+
+                    if (mc.level != null) {
+                        int bx = (int) Math.floor(arr.x);
+                        int bz = (int) Math.floor(arr.z);
+                        int startCheckY = Math.min((int) Math.floor(arr.y), mc.level.getMaxY() - 1);
+                        int minCheckY = Math.max(mc.level.getMinY(), defaultLandingY - 5);
+                        for (int y = startCheckY; y >= minCheckY; y--) {
+                            mutLandingPos.set(bx, y, bz);
+                            BlockState st = mc.level.getBlockState(mutLandingPos);
+                            if (!st.isAir() && !st.is(Blocks.CAVE_AIR) && !st.is(Blocks.VOID_AIR)) {
+                                if (st.getBlock() instanceof CarpetBlock) {
+                                    // Carpet placed on top of powder snow / landing block
+                                    foundBlockY = y - 1;
+                                    foundGroundY = y + 0.0625;
+                                } else {
+                                    foundBlockY = y;
+                                    foundGroundY = y + 1.0;
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    cachedLandingBlockY = (foundBlockY >= 0) ? foundBlockY : defaultLandingY;
+                    cachedGroundY = (foundBlockY >= 0) ? foundGroundY : (defaultLandingY + 1.0);
                 }
 
-                if (cachedLandingGroundPoint != null) {
-                    float bx = (float) (cachedLandingGroundPoint.x - camera.x);
-                    float by = (float) (cachedLandingGroundPoint.y - camera.y);
-                    float bz = (float) (cachedLandingGroundPoint.z - camera.z);
+                double groundY = cachedGroundY;
+                int landingBlockY = cachedLandingBlockY;
 
-                    addBox(pose, lineBuffer, bx, by, bz, 0.15f, 0.2f, 1.0f, 0.4f, 1.0f);
+                Vec3 trajPoint = new Vec3(arr.x, arr.y, arr.z);
+                Vec3 groundPoint = new Vec3(arr.x, groundY, arr.z);
 
-                    float flagHalfW = 0.04f;
-                    float flagH = 1.6f;
-                    addBoxFaces(pose, lineBuffer,
-                            bx - flagHalfW, by, bz - flagHalfW,
-                            bx + flagHalfW, by + flagH, bz + flagHalfW,
-                            0.2f, 1.0f, 0.4f, 0.90f);
+                float vr = 0.20f;
+                float vg = 1.00f;
+                float vb = 0.50f;
+                float va = 0.90f;
+
+                if (isCollision) {
+                    vr = 1.00f;
+                    vg = 0.65f;
+                    vb = 0.20f;
+                    va = 0.70f;
                 }
+
+                // Vertical 3D beam
+                float dropRadius = 0.05f; // 10cm vertical beam
+                add3DBeamSegment(pose, lineBuffer, trajPoint, groundPoint, camera,
+                        vr, vg, vb, va,
+                        vr, vg, vb, va,
+                        dropRadius);
+
+                // Ground landing pad marker (crystal on the landing surface)
+                float padHalf = 0.18f;
+                addBox(pose, lineBuffer,
+                        (float) (groundPoint.x - camera.x),
+                        (float) (groundPoint.y - camera.y),
+                        (float) (groundPoint.z - camera.z),
+                        padHalf, vr, vg, vb, 1.0f);
+
+                // Highlight the landing block on the ground with wireframe
+                BlockPos landingBlockPos = new BlockPos((int) Math.floor(arr.x), landingBlockY, (int) Math.floor(arr.z));
+                addHighlightBoxWithEdges(pose, lineBuffer, landingBlockPos, camera,
+                        vr, vg, vb, 0.20f,
+                        vr, vg, vb, 0.85f);
             }
 
             renderAll(mc, matrices);
@@ -286,23 +316,29 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
         }
     }
 
-    private static float[] getColorForTick(int tick, int maxTick, boolean isCollision, int colTick, float t) {
-        if (isCollision && tick >= colTick - 1) {
-            return new float[]{1.0f, 0.15f, 0.15f, 0.95f};
+    private static float[] getColorForTick(int tick, int maxIdx, boolean isCollision, int colTick, float progress) {
+        if (!isCollision || colTick < 0) {
+            // Safe flight: Smooth cyan (0.0, 0.9, 1.0) -> emerald lime (0.2, 1.0, 0.35)
+            float r = 0.0f + 0.20f * progress;
+            float g = 0.90f + 0.10f * progress;
+            float b = 1.0f - 0.65f * progress;
+            return new float[]{r, g, b, 0.90f};
+        } else {
+            // Collision flight:
+            if (tick < colTick - 2) {
+                // Safe portion before obstacle: bright aqua/cyan
+                return new float[]{0.15f, 0.85f, 1.0f, 0.85f};
+            } else if (tick < colTick) {
+                // Warning orange approaching obstacle
+                return new float[]{1.0f, 0.60f, 0.05f, 0.95f};
+            } else if (tick == colTick) {
+                // Critical impact red
+                return new float[]{1.0f, 0.10f, 0.10f, 1.0f};
+            } else {
+                // Ghost path after collision: crimson violet
+                return new float[]{0.85f, 0.20f, 0.50f, 0.55f};
+            }
         }
-
-        if (tick == 0) {
-            return new float[]{0.2f, 0.9f, 1.0f, 0.95f};
-        }
-
-        if (tick == maxTick) {
-            return new float[]{0.2f, 1.0f, 0.3f, 0.95f};
-        }
-
-        float r = 0.2f + 0.7f * t;
-        float g = 0.6f + 0.4f * (1.0f - Math.abs(t - 0.5f) * 2.0f);
-        float b = 1.0f - 0.7f * t;
-        return new float[]{r, g, b, 0.85f};
     }
 
     private static void add3DBeamSegment(
