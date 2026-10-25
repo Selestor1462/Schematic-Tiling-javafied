@@ -217,6 +217,18 @@ public class PearlFlightSimulator {
         sVerifiedChunksVersion++;
     }
 
+    public static void restartScan(Level level) {
+        sRouteSimulations.clear();
+        sRouteVerifiedChunks.clear();
+        sVerifiedChunks.clear();
+        sVerifiedChunksVersion++;
+        if (level != null && sActiveStartPos != null && sCandidateSolutions != null && !sCandidateSolutions.isEmpty()) {
+            for (PearlCalculator.CalculationResult sol : sCandidateSolutions) {
+                simulate(sActiveStartPos, sol, sActiveSettings, level);
+            }
+        }
+    }
+
     public static SimulationResult recheckRoute(Level level, String routeKey) {
         if (level == null || routeKey == null) return null;
         RouteTrajectory traj = sTrajectoryCache.get(routeKey);

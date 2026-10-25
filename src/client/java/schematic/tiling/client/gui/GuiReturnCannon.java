@@ -951,7 +951,8 @@ public class GuiReturnCannon extends GuiBase {
         this.addButton(checkRouteBtn, (btn, mouse) -> {
             if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
                 CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
-                if (currentlyTracking) {
+                boolean shift = GuiBase.isShiftDown();
+                if (currentlyTracking && !shift) {
                     ChunkFlightRouteRenderer.clearTrackedRoute();
                     PearlTrajectoryLineRenderer.clearTrajectory();
                     PearlTrajectoryLineRenderer.setLineDrawingEnabled(false);
@@ -960,9 +961,11 @@ public class GuiReturnCannon extends GuiBase {
                     if (this.checkboxShowRouteHud != null) {
                         this.checkboxShowRouteHud.setChecked(false, false);
                     }
+                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.scan_stopped");
+                    this.statusIsError = false;
                 } else {
                     if (this.mc != null && this.mc.level != null) {
-                        PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
+                        PearlFlightSimulator.restartScan(this.mc.level);
                     }
                     this.clearSimulationCacheOnly();
                     SimulationResult selSim = this.getOrRunSimulation(sel);
@@ -976,6 +979,10 @@ public class GuiReturnCannon extends GuiBase {
                         PearlTrajectoryLineRenderer.setLineDrawingEnabled(true);
                         PearlTrajectoryLineRenderer.displayTrajectory(selSim, -1);
                     }
+                    this.statusMessage = (currentlyTracking && shift)
+                            ? StringUtils.translate("schematic_tiling.gui.cannon.status.scan_restarted")
+                            : StringUtils.translate("schematic_tiling.gui.cannon.status.scan_started");
+                    this.statusIsError = false;
                 }
                 this.saveGuiState();
                 this.initGui();
@@ -1082,7 +1089,14 @@ public class GuiReturnCannon extends GuiBase {
         );
         this.addButton(rescanBtn, (btn, mouse) -> {
             if (this.mc != null && this.mc.level != null) {
-                PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
+                boolean shift = GuiBase.isShiftDown();
+                if (shift) {
+                    PearlFlightSimulator.restartScan(this.mc.level);
+                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.scan_restarted");
+                } else {
+                    PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
+                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.rescanned");
+                }
                 this.clearSimulationCacheOnly();
                 if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
                     CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
@@ -1096,7 +1110,6 @@ public class GuiReturnCannon extends GuiBase {
                         }
                     }
                 }
-                this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.rescanned");
                 this.statusIsError = false;
                 this.saveGuiState();
                 this.initGui();
