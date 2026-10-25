@@ -471,9 +471,11 @@ public class GuiReturnCannon extends GuiBase {
             }
             default -> comp = Comparator.comparingDouble(r -> r.distance);
         }
-        comp = comp.thenComparing(r -> r.direction.name);
+        Comparator<CalculationResult> finalComp = Comparator.comparing(
+                (CalculationResult r) -> (this.alignerFacing != null && r.direction == this.alignerFacing) ? 0 : 1
+        ).thenComparing(comp).thenComparing(r -> r.direction.name);
 
-        list.sort(comp);
+        list.sort(finalComp);
         this.solutions = list;
 
         if (selected != null) {
@@ -718,8 +720,11 @@ public class GuiReturnCannon extends GuiBase {
             PearlCalculator.Direction[] dirs = PearlCalculator.Direction.values();
             int next = (this.alignerFacing.ordinal() + 1) % dirs.length;
             this.alignerFacing = dirs[next];
+            lastAlignerFacing = this.alignerFacing;
             this.alignerFacingBtn.setDisplayString(StringUtils.translate("schematic_tiling.direction." + this.alignerFacing.name().toLowerCase(Locale.ROOT)));
             this.saveGuiState();
+            this.sortSolutions();
+            this.initGui();
         });
 
         this.mirrorAlignerBtn = new ButtonGeneric(col1X + 96, y, 110, 18, this.getMirrorBtnLabel());
@@ -898,6 +903,10 @@ public class GuiReturnCannon extends GuiBase {
             this.addButton(rowBtn, (btn, mouse) -> {
                 this.selectedSolutionIndex = solIdx;
                 CalculationResult sel = this.solutions.get(solIdx);
+                if (sel != null && sel.direction != null) {
+                    this.alignerFacing = sel.direction;
+                    lastAlignerFacing = sel.direction;
+                }
                 SimulationResult selSim = this.getOrRunSimulation(sel);
                 if (selSim != null) {
                     if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
