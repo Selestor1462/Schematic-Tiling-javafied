@@ -142,6 +142,28 @@ public class ChunkFlightRouteRenderer {
         return activeSim != null && activeRouteKey != null;
     }
 
+    public static String getActiveRouteKey() {
+        return activeRouteKey;
+    }
+
+    public static PearlCalculator.CannonSettings getActiveSettings() {
+        return activeSettings;
+    }
+
+    public static void rescan(ClientLevel world) {
+        if (world == null) return;
+        PearlFlightSimulator.rescanLoadedChunks(world);
+        if (activeRouteKey != null) {
+            PearlFlightSimulator.SimulationResult updated = PearlFlightSimulator.getRouteSimulation(activeRouteKey);
+            if (updated != null) {
+                activeSim = updated;
+                if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                    PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                }
+            }
+        }
+    }
+
     public static PearlFlightSimulator.SimulationResult getActiveSimulation() {
         return activeSim;
     }
@@ -176,6 +198,20 @@ public class ChunkFlightRouteRenderer {
                 || !Objects.equals(lastRenderRouteKey, activeRouteKey)
                 || ++renderCheckTimer >= 20) {
             renderCheckTimer = 0;
+
+            if (activeSim != null && activeRouteKey != null && activeSim.status == PearlFlightSimulator.FlightStatus.COLLISION && activeSim.collisionPos != null) {
+                if (PearlFlightSimulator.isObstacleCleared(world, activeSim.collisionPos)) {
+                    PearlFlightSimulator.recheckRoute(world, activeRouteKey);
+                    PearlFlightSimulator.SimulationResult updated = PearlFlightSimulator.getRouteSimulation(activeRouteKey);
+                    if (updated != null && updated != activeSim) {
+                        activeSim = updated;
+                        if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
+                            PearlTrajectoryLineRenderer.displayTrajectory(updated, -1);
+                        }
+                    }
+                }
+            }
+
             lastRenderVersion = PearlFlightSimulator.getVerifiedChunksVersion();
             lastRenderRouteKey = activeRouteKey;
             cachedUncheckedChunks.clear();
@@ -228,7 +264,7 @@ public class ChunkFlightRouteRenderer {
         }
     }
 
-    private static void filledPlane(Matrix4fc positionMatrix, BufferBuilder buffer,
+    private static void filledPlane(Matrix4f positionMatrix, BufferBuilder buffer,
                                     double x1, double z1, double x2, double z2,
                                     double y, Vec3 camera, Color4f color) {
         float rx1 = (float) (x1 - camera.x);
