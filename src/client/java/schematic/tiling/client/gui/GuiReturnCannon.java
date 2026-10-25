@@ -1080,41 +1080,6 @@ public class GuiReturnCannon extends GuiBase {
                 this.statusIsError = false;
             }
         });
-
-        ButtonGeneric rescanBtn = new ButtonGeneric(startX + 390, row2Y, 75, 20, StringUtils.translate("schematic_tiling.gui.cannon.button.rescan"));
-        rescanBtn.setEnabled(hasSol);
-        rescanBtn.setHoverStrings(
-                StringUtils.translate("schematic_tiling.gui.cannon.hover.rescan"),
-                StringUtils.translate("schematic_tiling.gui.cannon.hover.rescan_desc")
-        );
-        this.addButton(rescanBtn, (btn, mouse) -> {
-            if (this.mc != null && this.mc.level != null) {
-                boolean shift = GuiBase.isShiftDown();
-                if (shift) {
-                    PearlFlightSimulator.restartScan(this.mc.level);
-                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.scan_restarted");
-                } else {
-                    PearlFlightSimulator.rescanLoadedChunks(this.mc.level);
-                    this.statusMessage = StringUtils.translate("schematic_tiling.gui.cannon.status.rescanned");
-                }
-                this.clearSimulationCacheOnly();
-                if (this.selectedSolutionIndex >= 0 && this.selectedSolutionIndex < this.solutions.size()) {
-                    CalculationResult sel = this.solutions.get(this.selectedSolutionIndex);
-                    SimulationResult sim = this.getOrRunSimulation(sel);
-                    if (sim != null) {
-                        if (ChunkFlightRouteRenderer.hasTrackedRoute()) {
-                            ChunkFlightRouteRenderer.trackRoute(sim, this.settings);
-                        }
-                        if (PearlTrajectoryLineRenderer.isLineDrawingEnabled()) {
-                            PearlTrajectoryLineRenderer.displayTrajectory(sim, -1);
-                        }
-                    }
-                }
-                this.statusIsError = false;
-                this.saveGuiState();
-                this.initGui();
-            }
-        });
     }
 
     private void runCalculation() {
