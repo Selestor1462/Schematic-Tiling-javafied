@@ -1666,6 +1666,11 @@ public class GuiReturnCannon extends GuiBase {
 
                         LitematicaSchematic targetSchem = null;
                         if (savedFile != null && savedFile.isFile()) {
+                            for (LitematicaSchematic existing : new ArrayList<>(SchematicHolder.getInstance().getAllSchematics())) {
+                                if (savedFile.equals(existing.getFile())) {
+                                    SchematicHolder.getInstance().removeSchematic(existing);
+                                }
+                            }
                             if (this.loadToMemory) {
                                 targetSchem = SchematicHolder.getInstance().getOrLoad(savedFile);
                             } else {
