@@ -27,7 +27,17 @@ import schematic.tiling.core.KnapsackSolver;
 import schematic.tiling.core.SchematicTilerUtil;
 import schematic.tiling.core.TilingTree;
 
-public class GuiSchematicTiler extends GuiBase {
+public class GuiSchematicTiler extends GuiScaledDialog {
+
+    @Override
+    protected int getDialogWidth() {
+        return 320;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return (this.tilingTree != null && this.tilingTree.needsLength()) ? 230 : 204;
+    }
 
     private final WidgetFileBrowserBase.DirectoryEntry selectedEntry;
     private final GuiSchematicLoad loadScreen;

@@ -17,11 +17,21 @@ import schematic.tiling.client.util.PearlTrajectoryLineRenderer;
 /**
  * Detailed viewer for pearl coordinates, velocity, and chunk locations at every tick of the simulated trajectory.
  */
-public class GuiCannonTrajectoryTicks extends GuiBase {
+public class GuiCannonTrajectoryTicks extends GuiScaledDialog {
 
     private static final int DIALOG_WIDTH = 500;
     private static final int DIALOG_HEIGHT = 330;
     private static final int TICKS_PER_PAGE = 6;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     private final GuiBase parentGui;
     private final SimulationResult sim;

@@ -18,11 +18,21 @@ import schematic.tiling.cannon.PearlFlightSimulator.SimulationResult;
 import schematic.tiling.client.util.ChunkFlightRouteRenderer;
 import schematic.tiling.client.util.PearlTrajectoryLineRenderer;
 
-public class GuiCannonSimulation extends GuiBase {
+public class GuiCannonSimulation extends GuiScaledDialog {
 
     private static final int DIALOG_WIDTH = 500;
     private static final int DIALOG_HEIGHT = 330;
     private static final int TICKS_PER_PAGE = 6;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     public enum ViewMode {
         OVERVIEW,

@@ -1,5 +1,7 @@
 package schematic.tiling.client.mixin;
 
+import java.util.List;
+
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -14,6 +16,7 @@ import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.SelectionMode;
 import fi.dy.masa.malilib.gui.GuiBase;
+import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.util.StringUtils;
 
@@ -31,13 +34,45 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
     @Shadow
     protected String selectionId;
 
+    @Unique
+    @SuppressWarnings("unchecked")
+    private List<ButtonBase> schematicTiling_getButtons() {
+        try {
+            java.lang.reflect.Field f = GuiBase.class.getDeclaredField("buttons");
+            f.setAccessible(true);
+            return (List<ButtonBase>) f.get(this);
+        } catch (Throwable t) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    @Unique
+    private int schematicTiling_findAvailableY(int btnWidth, int startY) {
+        int y = startY;
+        List<ButtonBase> currentButtons = this.schematicTiling_getButtons();
+        while (y < this.getScreenHeight() - 30) {
+            int maxRightOnRow = 0;
+            for (ButtonBase btn : currentButtons) {
+                if (btn.getY() + btn.getHeight() > y && btn.getY() < y + 20) {
+                    maxRightOnRow = Math.max(maxRightOnRow, btn.getX() + btn.getWidth());
+                }
+            }
+            int preferredX = this.getScreenWidth() - btnWidth - 10;
+            if (preferredX >= maxRightOnRow + 6) {
+                return y;
+            }
+            y += 24;
+        }
+        return startY;
+    }
+
     @Inject(method = "initGui", at = @At("RETURN"))
     private void schematicTiling_injectTilingEditorButton(CallbackInfo ci) {
         if (this.selection == null) {
             return;
         }
 
-        boolean hasTilingBtn = false;
+        int nextStartY = 24;
 
         // 1. Tiling Setup Button (Only in Normal selection mode for parts schematics)
         if (DataManager.getSelectionManager().getSelectionMode() == SelectionMode.NORMAL
@@ -45,8 +80,8 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
             String btnLabel = StringUtils.translate("schematic_tiling.gui.button.tiling_setup");
             int btnWidth = Math.max(90, this.getStringWidth(btnLabel) + 14);
             int btnHeight = 20;
-            int x = this.getScreenWidth() - btnWidth - 10;
-            int y = 24;
+            int y = this.schematicTiling_findAvailableY(btnWidth, nextStartY);
+            int x = Math.max(10, this.getScreenWidth() - btnWidth - 10);
 
             ButtonGeneric tilingBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
             tilingBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.tiling_setup"));
@@ -54,7 +89,7 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
             this.addButton(tilingBtn, (btn, mouseBtn) -> {
                 GuiBase.openGui(new GuiSchematicTilingEditor(this.selection, this));
             });
-            hasTilingBtn = true;
+            nextStartY = y + 24;
         }
 
         // 2. Return Cannon Button (In either selection mode when selection ends with "cannon")
@@ -62,8 +97,8 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
             String btnLabel = StringUtils.translate("schematic_tiling.gui.button.return_cannon");
             int btnWidth = Math.max(95, this.getStringWidth(btnLabel) + 14);
             int btnHeight = 20;
-            int x = this.getScreenWidth() - btnWidth - 10;
-            int y = hasTilingBtn ? 48 : 24;
+            int y = this.schematicTiling_findAvailableY(btnWidth, nextStartY);
+            int x = Math.max(10, this.getScreenWidth() - btnWidth - 10);
 
             ButtonGeneric cannonBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
             cannonBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.return_cannon"));

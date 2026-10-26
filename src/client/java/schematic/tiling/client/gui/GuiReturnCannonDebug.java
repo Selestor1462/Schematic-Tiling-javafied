@@ -29,7 +29,20 @@ import schematic.tiling.cannon.ReturnCannonAssembler;
 import schematic.tiling.cannon.ReturnCannonAssembler.CannonEntry;
 import schematic.tiling.cannon.ReturnCannonAssembler.MirrorMode;
 
-public class GuiReturnCannonDebug extends GuiBase {
+public class GuiReturnCannonDebug extends GuiScaledDialog {
+
+    private static final int DIALOG_WIDTH = 490;
+    private static final int DIALOG_HEIGHT = 315;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     public static boolean debugModeEnabled = false;
 

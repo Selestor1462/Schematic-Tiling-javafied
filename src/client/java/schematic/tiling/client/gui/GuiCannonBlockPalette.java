@@ -26,10 +26,20 @@ import schematic.tiling.cannon.CannonBlockPalette.Preset;
 /**
  * Dialog to configure block palette replacements for Pearl Return Cannon generation.
  */
-public class GuiCannonBlockPalette extends GuiBase {
+public class GuiCannonBlockPalette extends GuiScaledDialog {
 
     private static final int DIALOG_WIDTH = 470;
     private static final int DIALOG_HEIGHT = 330;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     private final GuiReturnCannon parentCannonGui;
     private final CannonBlockPalette palette;

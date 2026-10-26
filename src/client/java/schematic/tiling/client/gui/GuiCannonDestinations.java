@@ -17,11 +17,21 @@ import fi.dy.masa.malilib.util.StringUtils;
 import schematic.tiling.cannon.CannonDestination;
 import schematic.tiling.cannon.CannonDestinationManager;
 
-public class GuiCannonDestinations extends GuiBase {
+public class GuiCannonDestinations extends GuiScaledDialog {
 
     private static final int DIALOG_WIDTH = 440;
     private static final int DIALOG_HEIGHT = 300;
     private static final int ENTRIES_PER_PAGE = 4;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     public enum FilterMode {
         ALL,

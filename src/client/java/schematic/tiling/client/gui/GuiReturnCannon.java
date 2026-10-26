@@ -50,10 +50,20 @@ import schematic.tiling.client.util.ChunkFlightRouteRenderer;
 import schematic.tiling.client.util.PearlTrajectoryLineRenderer;
 import schematic.tiling.core.SchematicTilerUtil.GenerationResult;
 
-public class GuiReturnCannon extends GuiBase {
+public class GuiReturnCannon extends GuiScaledDialog {
 
     private static final int DIALOG_WIDTH = 500;
     private static final int DIALOG_HEIGHT = 365;
+
+    @Override
+    protected int getDialogWidth() {
+        return DIALOG_WIDTH;
+    }
+
+    @Override
+    protected int getDialogHeight() {
+        return DIALOG_HEIGHT;
+    }
 
     private static LitematicaSchematic sReferenceAlignerSchematic = null;
 
@@ -275,6 +285,7 @@ public class GuiReturnCannon extends GuiBase {
         this.selection = selection;
         this.parent = parent;
         this.setParent(parent);
+        this.useTitleHierarchy = false;
         this.title = StringUtils.translate("schematic_tiling.gui.cannon.title");
 
         if (selection != null && selection != lastSelection) {
