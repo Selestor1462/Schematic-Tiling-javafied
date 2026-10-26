@@ -2,7 +2,7 @@
 
 A **Fabric mod addon for [Litematica](https://github.com/maruohon/litematica)** that tiles modular, parametric schematics in-game using knapsack optimization.
 
-This mod is an in-game Java port of the original Python tool [**Schematic-Tiling by EQUENOS-2**](https://github.com/EQUENOS-2/Schematic-Tiling).
+This mod is an in-game Java port of the original Python tool [**Schematic-Tiling by spindle**](https://github.com/EQUENOS-2/Schematic-Tiling).
 
 ---
 
@@ -22,7 +22,7 @@ To start, create an area selection in Litematica's **Normal** selection mode wit
 
 Once your selection has subregion boxes defined, open the area selection editor in Litematica (`Area Selection Editor`). You will see a **Tiling Setup** button in the top right corner. The built-in editor allows you to configure tiling groups, subgroups, modular roles, and origin fine-tuning directly in-game without manually formatting box names.
 
-For advanced documentation, syntax details, and design methodology behind modular parametric schematics, see the original [EQUENOS-2 / Schematic-Tiling Documentation](https://github.com/EQUENOS-2/Schematic-Tiling).
+For advanced documentation, syntax details, and design methodology behind modular parametric schematics, see the original [spindle / Schematic-Tiling Documentation](https://github.com/EQUENOS-2/Schematic-Tiling).
 
 ---
 
@@ -91,7 +91,7 @@ The compiled mod jar will be in `build/libs/`.
 
 ## Credits
 
-Original Python tool, mathematical algorithm, and design by [EQUENOS-2](https://github.com/EQUENOS-2/Schematic-Tiling).
+Original Python tool, mathematical algorithm, and design by [spindle](https://github.com/EQUENOS-2/Schematic-Tiling).
 
 Pearl trajectory calculation logic adapted from [PearlCalculatorBlazor by whats2000](https://github.com/whats2000/PearlCalculatorBlazor).
 
