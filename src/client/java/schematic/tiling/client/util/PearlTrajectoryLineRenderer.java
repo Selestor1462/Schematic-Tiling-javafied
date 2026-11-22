@@ -18,7 +18,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.CoreShaders;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Blocks;
@@ -246,8 +246,8 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
                     if (mc.level != null) {
                         int bx = (int) Math.floor(arr.x);
                         int bz = (int) Math.floor(arr.z);
-                        int startCheckY = Math.min((int) Math.floor(arr.y), mc.level.getMaxY() - 1);
-                        int minCheckY = Math.max(mc.level.getMinY(), defaultLandingY - 5);
+                        int startCheckY = Math.min((int) Math.floor(arr.y), mc.level.getMaxBuildHeight() - 1);
+                        int minCheckY = Math.max(mc.level.getMinBuildHeight(), defaultLandingY - 5);
                         for (int y = startCheckY; y >= minCheckY; y--) {
                             mutLandingPos.set(bx, y, bz);
                             BlockState st = mc.level.getBlockState(mutLandingPos);
@@ -541,7 +541,7 @@ public class PearlTrajectoryLineRenderer implements IClientTickHandler {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         BufferUploader.drawWithShader(builtBuffer);
 

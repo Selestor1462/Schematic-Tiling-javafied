@@ -381,7 +381,7 @@ public class GuiCannonBlockPalette extends GuiBase {
         int barX = gridX + GRID_COLS * (SLOT_SIZE + 2) + 6;
         int barY = gridY;
         int barH = VISIBLE_ROWS * (SLOT_SIZE + 2) - 2;
-        this.scrollBar.render(mouseX, mouseY, partialTicks, barX, barY, 10, barH, this.scrollBar.getMaxValue(), ctx);
+        this.scrollBar.render(mouseX, mouseY, partialTicks, barX, barY, 10, barH, this.scrollBar.getMaxValue());
 
         // Hover tooltip for grid item
         if (hoveredBlock != null) {

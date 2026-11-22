@@ -597,7 +597,7 @@ public class CannonBlockPalette {
         }
 
         // Must be redstone conductor and solid render
-        if (!def.isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) || !def.isSolidRender() || !def.canOcclude()) {
+        if (!def.isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) || !def.isSolidRender(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) || !def.canOcclude()) {
             return false;
         }
 

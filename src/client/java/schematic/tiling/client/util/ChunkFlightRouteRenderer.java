@@ -27,7 +27,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.CoreShaders;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.CommonColors;
@@ -286,7 +286,7 @@ public class ChunkFlightRouteRenderer {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableCull();
         RenderSystem.disableDepthTest();
-        RenderSystem.setShader(CoreShaders.POSITION_COLOR);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         BufferUploader.drawWithShader(builtBuffer);
 
