@@ -1,12 +1,8 @@
-# Release 1.2.3
+# Release 1.2.4
 
 ### New features:
-- View of pearl location tick by tick
-- Line drawer of pearl trajectory
-- Obstacle checker
-- Destinations saving for commonly used position like MS
+- Support for Minecraft 1.21.0 and 1.21.1 (new `1.21` branch, built against Litematica 0.19.61 / MaLiLib 0.21.10)
+- 1.21 build now included in release artifacts
 
-### Fixes:
-- fix wrong catcher placement if pearl hits bedrock
-- procastrination with trying to fix why online calculator outputs more results than mine to realise it doesnt account bedrock roof exists at y128
-- something more that i dont already remember
+### Notes:
+- The `.litematic` schematic format version is identical (Version 7 / SubVersion 1), so existing parts schematics and bundled return-cannon schematics load on 1.21.0/1.21.1 without any file changes
