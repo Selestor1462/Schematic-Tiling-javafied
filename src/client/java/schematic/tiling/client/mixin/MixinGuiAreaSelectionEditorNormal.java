@@ -20,7 +20,6 @@ import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.util.StringUtils;
 
-import schematic.tiling.client.gui.GuiReturnCannon;
 import schematic.tiling.client.gui.GuiSchematicTilingEditor;
 import schematic.tiling.core.TilingUnit;
 
@@ -91,57 +90,6 @@ public abstract class MixinGuiAreaSelectionEditorNormal extends GuiBase {
             });
             nextStartY = y + 24;
         }
-
-        // 2. Return Cannon Button (In either selection mode when selection ends with "cannon")
-        if (this.schematicTiling_isCannonSelection()) {
-            String btnLabel = StringUtils.translate("schematic_tiling.gui.button.return_cannon");
-            int btnWidth = Math.max(95, this.getStringWidth(btnLabel) + 14);
-            int btnHeight = 20;
-            int y = this.schematicTiling_findAvailableY(btnWidth, nextStartY);
-            int x = Math.max(10, this.getScreenWidth() - btnWidth - 10);
-
-            ButtonGeneric cannonBtn = new ButtonGeneric(x, y, btnWidth, btnHeight, btnLabel);
-            cannonBtn.setHoverStrings(StringUtils.translate("schematic_tiling.gui.button.hover.return_cannon"));
-
-            this.addButton(cannonBtn, (btn, mouseBtn) -> {
-                GuiBase.openGui(new GuiReturnCannon(this.selection, this));
-            });
-        }
-    }
-
-    @Unique
-    private boolean schematicTiling_isCannonSelection() {
-        if (this.selection == null) {
-            return false;
-        }
-
-        // 1. Check selection name
-        String selName = this.selection.getName();
-        if (selName != null && selName.trim().toLowerCase().endsWith("cannon")) {
-            return true;
-        }
-
-        // 2. Check selection ID
-        if (this.selectionId != null && this.selectionId.trim().toLowerCase().endsWith("cannon")) {
-            return true;
-        }
-
-        // 3. Check currently selected schematic placement, if any
-        SchematicPlacement placement = DataManager.getSchematicPlacementManager().getSelectedSchematicPlacement();
-        if (placement != null) {
-            String pName = placement.getName();
-            if (pName != null && pName.trim().toLowerCase().endsWith("cannon")) {
-                return true;
-            }
-            if (placement.getSchematic() != null && placement.getSchematic().getMetadata() != null) {
-                String metaName = placement.getSchematic().getMetadata().getName();
-                if (metaName != null && metaName.trim().toLowerCase().endsWith("cannon")) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     @Unique
