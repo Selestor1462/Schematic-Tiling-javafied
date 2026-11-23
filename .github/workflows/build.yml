@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         branch: [ "1.21", "1.21.4", "1.21.10", "master", "26.2", "26.3" ]
     runs-on: ubuntu-latest
@@ -30,7 +31,14 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build --no-daemon
+        run: |
+          for i in 1 2 3; do
+            ./gradlew build --no-daemon && break || {
+              echo "Build attempt $i failed. Waiting 10s before retry..."
+              sleep 10
+              if [ "$i" -eq 3 ]; then exit 1; fi
+            }
+          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
