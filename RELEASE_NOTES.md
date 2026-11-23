@@ -6,5 +6,5 @@
   - Added 1.21 build to the CI release matrix and artifacts.
   - Special thanks to **Quantum TMC** ([quantum-tmc/Schematic-Tiling-javafied](https://github.com/quantum-tmc/Schematic-Tiling-javafied)) for the 1.21/1.21.1 port and PR contribution!
 - **Removed Built-in Pearl Cannon Generator:**
-  - Stripped the pearl return cannon generator from the mod in favour of an upcoming dedicated cannon encoder.
+  - Stripped the pearl return cannon generator from this mod in favour of a dedicated, standalone tool: [**Cannon Calculator** (`Selestor1462/cannoncalculator`)](https://github.com/Selestor1462/cannoncalculator).
   - Reduced mod footprint and streamlined focused schematic tiling capabilities.
