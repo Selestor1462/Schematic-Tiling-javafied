@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        branch: [ "1.21.4", "1.21.10", "master", "26.2", "26.3" ]
+        branch: [ "1.21", "1.21.4", "1.21.10", "master", "26.2", "26.3" ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

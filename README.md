@@ -12,7 +12,7 @@ This mod is an in-game Java port of the original Python tool [**Schematic-Tiling
 - **In-Game Tiling:** Generates tiled schematics on-the-fly without leaving Minecraft or running external Python scripts.
 - **Dynamic Optimization:** Solves the unbounded knapsack problem for each modular sub-region to fill target dimensions (Width and/or Length) with minimal overhang or exact matches.
 - **Auto-Load & Placement:** Generates the tiled `.litematic` file, automatically saves it to your schematics folder, and can directly load it into memory and create a placement in your world.
-- **Multi-Version Support:** Supports **1.21.4**, **1.21.10**, **1.21.11**, **26.2**, and **26.3**.
+- **Multi-Version Support:** Supports **1.21.0**, **1.21.1**, **1.21.4**, **1.21.10**, **1.21.11**, **26.2**, and **26.3**.
 
 ---
 
@@ -67,6 +67,7 @@ Please use pearl cannon creation with caution as it has not been extensively tes
 
 | Minecraft Version | Branch | Litematica Version | MaLiLib Version |
 | :--- | :--- | :--- | :--- |
+| **1.21.0 / 1.21.1** | `1.21` | `0.19.61+` | `0.21.10+` |
 | **1.21.4** | `1.21.4` | `0.21.7+` | `0.23.5+` |
 | **1.21.10** | `1.21.10` | `0.24.9+` | `0.26.8+` |
 | **1.21.11** | `master` | `0.26.16+` | `0.27.20+` |
