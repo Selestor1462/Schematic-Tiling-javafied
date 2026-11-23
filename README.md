@@ -94,9 +94,7 @@ The compiled mod jar will be in `build/libs/`.
 
 Original Python tool, mathematical algorithm, and design by [EQUENOS-2](https://github.com/EQUENOS-2/Schematic-Tiling).
 
-Pearl trajectory calculation logic adapted from [PearlCalculatorBlazor by whats2000](https://github.com/whats2000/PearlCalculatorBlazor).
 
-Return pearl cannon design and redstone architecture by garlic bread, documented in the [Return Cannon Tutorial](https://www.youtube.com/watch?v=MkEJpBAtin8).
 
 [Litematica](https://github.com/maruohon/litematica) and [MaLiLib](https://github.com/maruohon/malilib) by [masa](https://github.com/maruohon) and [Sakura-Ryoko](https://github.com/Sakura-Ryoko).
 
